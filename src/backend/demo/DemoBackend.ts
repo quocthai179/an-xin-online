@@ -1,6 +1,6 @@
 import type {
   AppNotification, AvatarSpec, Backend, CandidateCard, CandidateDetail, CandidateInput, Contact, FortuneDraw, GiftKind,
-  Invitation, Me, Offer, PresenceApi, ReportReason, Result, Role, StreetEvent,
+  Invitation, Me, Offer, PresenceApi, ReportReason, Result, Role, StreetEvent, ZoneOrPlaza,
 } from '../types';
 import { vnDay } from '@/lib/time';
 import { DB_LOCK, loadRaw, saveDb, type DemoDb, type KeyValueStore, type Locks } from './db';
@@ -8,7 +8,7 @@ import type { Bus, BusMessage } from './bus';
 import * as engine from './engine';
 import { DemoPresence } from './presence';
 import { seedDb } from './seed';
-import { topicInbox, TOPIC_STREET } from '../topics';
+import { EV, topicInbox, topicPos, TOPIC_STREET } from '../topics';
 
 export interface DemoDeps {
   store: KeyValueStore;
@@ -92,6 +92,13 @@ export class DemoBackend implements Backend {
   /** Used by demo bots: perform a gift as a bot HR. */
   botGift(botId: string, candidateId: string, kind: GiftKind) {
     return this.tx((db, ctx) => engine.dropGift(db, ctx, candidateId, kind), botId);
+  }
+
+  /** Used by walking demo bots: broadcast a pose for a bot walker (also delivered locally, the bus does not echo). */
+  botPose(zone: ZoneOrPlaza, payload: Record<string, unknown>): void {
+    const msg: BusMessage = { topic: topicPos(zone), event: EV.pose, payload };
+    this.deps.bus.post(msg);
+    this.pres.handle(msg);
   }
 
   // ----- identity -----

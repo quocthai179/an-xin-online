@@ -1,7 +1,12 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 import { useBoot, useStreetSync } from '@/hooks/useStreetSync';
+import { visitSpot } from '@/lib/layout';
+import { zoneIndex } from '@/lib/zones';
+import { initialView } from '@/scene-lib/capability';
+import { requestTeleport } from '@/state/input';
 import { useSession } from '@/state/session';
 import { useUi } from '@/state/ui';
 import { useWorld } from '@/state/world';
@@ -20,11 +25,12 @@ import { TemplePanel } from '../ui/TemplePanel';
 import { Ticker } from '../ui/Ticker';
 import { Toasts } from '../ui/Toasts';
 
-/**
- * Mount point for the street. Today only the 2D list view exists.
- * The 3D phase renders `<Scene>` (dynamic import, ssr:false) here when `view === '3d'` and flips SCENE_AVAILABLE.
- */
-const SCENE_AVAILABLE = false;
+/** The 3D street is a lazily loaded chunk; the 2D list stays as the fallback and the accessible view. */
+const Scene = dynamic(() => import('../scene/Scene'), {
+  ssr: false,
+  loading: () => <p className="scene-loading">Đang dựng phố...</p>,
+});
+const SCENE_AVAILABLE = true;
 
 function Panels() {
   const panel = useUi((s) => s.panel);
@@ -58,7 +64,7 @@ export function StreetApp() {
   const backend = useSession((s) => s.backend);
   const loaded = useWorld((s) => s.loaded);
   const setPanel = useUi((s) => s.setPanel);
-  const [view, setView] = useState<'2d' | '3d'>('2d');
+  const [view, setView] = useState<'2d' | '3d'>(() => (typeof window === 'undefined' ? '2d' : initialView(window.location.search)));
   const deepLinked = useRef(false);
 
   // /?c=<slug> deep link: open that candidate once the street is loaded
@@ -68,7 +74,13 @@ export function StreetApp() {
     const slug = new URLSearchParams(window.location.search).get('c');
     if (!slug) return;
     const found = Object.values(useWorld.getState().candidates).find((c) => c.slug === slug);
-    if (found) setPanel({ kind: 'candidate', id: found.id });
+    if (!found) return;
+    const seat = useWorld.getState().plan.seats.get(found.id);
+    if (seat) {
+      const v = visitSpot(zoneIndex(seat.zone), seat.seat);
+      requestTeleport(v.x, v.z, v.ry);
+    }
+    setPanel({ kind: 'candidate', id: found.id });
   }, [ready, me, loaded, setPanel]);
 
   if (!ready) {
@@ -89,10 +101,15 @@ export function StreetApp() {
       ) : (
         <>
           <Hud view={view} sceneAvailable={SCENE_AVAILABLE} onToggleView={() => setView(view === '2d' ? '3d' : '2d')} />
-          <main className="street">
-            {/* 3D mount point: {view === '3d' && SCENE_AVAILABLE ? <Scene /> : <ListView2D />} */}
-            <ListView2D />
-          </main>
+          {view === '3d' && SCENE_AVAILABLE ? (
+            <main className="street-3d">
+              <Scene />
+            </main>
+          ) : (
+            <main className="street">
+              <ListView2D />
+            </main>
+          )}
           <Ticker />
           <Panels />
         </>

@@ -16,6 +16,7 @@ export function Hud({ onToggleView, sceneAvailable, view }: { onToggleView: () =
   const online = useWorld((s) => s.online);
   const setPanel = useUi((s) => s.setPanel);
   const [muted, setM] = useState(isMuted());
+  const [menu, setMenu] = useState(false);
   const profile = me?.profile;
   const q = me?.quota;
 
@@ -26,10 +27,13 @@ export function Hud({ onToggleView, sceneAvailable, view }: { onToggleView: () =
   };
 
   return (
-    <header className="hud">
+    <header className={`hud${sceneAvailable && view === '3d' ? ' hud-3d' : ''}${menu ? ' open' : ''}`}>
       <div className="brand">
         <span aria-hidden>🪧</span> <strong>Phố Xin Việc</strong>
         <span className="online" title="Số người đang đi dạo">● {online} người đang đi dạo</span>
+        <button className="btn small hud-burger" onClick={() => setMenu(!menu)} aria-expanded={menu} aria-label="Mở menu">
+          {menu ? '✕' : '☰'}
+        </button>
       </div>
       {profile && (
         <div className="me">

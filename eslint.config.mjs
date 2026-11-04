@@ -17,6 +17,11 @@ const config = [
     },
   },
   {
+    // The 3D scene mutates three.js objects (pools of meshes/sprites/materials) inside useFrame by design.
+    files: ['src/components/scene/**/*.tsx'],
+    rules: { 'react-hooks/immutability': 'off' },
+  },
+  {
     ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts', 'coverage/**', 'e2e/**'],
   },
 ];

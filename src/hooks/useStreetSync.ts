@@ -7,6 +7,7 @@ import { NotificationAggregator } from '@/lib/notify';
 import { notifView } from '@/lib/notifText';
 import { playSound } from '@/audio/sfx';
 import { useSession } from '@/state/session';
+import { clearPeers, onPeerLeave, onPeerPose, onPeerReaction } from '@/state/peers';
 import { useUi } from '@/state/ui';
 import { useWorld } from '@/state/world';
 
@@ -76,21 +77,22 @@ export function useStreetSync(): void {
     };
   }, [backend]);
 
-  // presence (online counter; 3D phase will publish poses)
+  // presence: online counter, remote walkers and reactions (the 3D scene publishes our own pose)
   useEffect(() => {
     if (!backend || !uid) return;
     const me = useSession.getState().me;
     if (!me) return;
     const meta: PeerMeta = { uid, name: me.profile.displayName, role: me.profile.role, company: me.profile.company, avatar: me.profile.avatar };
     const off = backend.presence.subscribe({
-      onPose: () => undefined,
-      onLeave: () => undefined,
-      onReaction: () => undefined,
+      onPose: onPeerPose,
+      onLeave: onPeerLeave,
+      onReaction: onPeerReaction,
       onCount: (n) => useWorld.getState().setOnline(n),
     });
     void backend.presence.join(meta, 'plaza');
     return () => {
       off();
+      clearPeers();
       void backend.presence.leave();
     };
   }, [backend, uid]);
