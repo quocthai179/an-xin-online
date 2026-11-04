@@ -62,6 +62,7 @@ export function StreetApp() {
   const ready = useSession((s) => s.ready);
   const me = useSession((s) => s.me);
   const backend = useSession((s) => s.backend);
+  const offline = useSession((s) => s.offline);
   const loaded = useWorld((s) => s.loaded);
   const setPanel = useUi((s) => s.setPanel);
   const [view, setView] = useState<'2d' | '3d'>(() => (typeof window === 'undefined' ? '2d' : initialView(window.location.search)));
@@ -94,6 +95,11 @@ export function StreetApp() {
   return (
     <div className="app">
       {backend?.mode === 'demo' && <DemoBanner />}
+      {offline && (
+        <div className="demo-banner offline-banner" role="status">
+          Mất kết nối tới máy chủ, đang thử lại... Bạn vẫn xem được phố, nhưng thả xu hay gửi lời mời cần có mạng.
+        </div>
+      )}
       {!me ? (
         <main className="center">
           <Onboarding />

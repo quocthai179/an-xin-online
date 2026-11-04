@@ -17,15 +17,21 @@ const TITLE = 'Phố Xin Việc 3D';
 export function useBoot(): void {
   useEffect(() => {
     let cancelled = false;
+    let statusOff: (() => void) | undefined;
     void (async () => {
       const backend = await createBackend();
       if (cancelled) return;
       useSession.getState().setBackend(backend);
+      statusOff = backend.onStatus?.((st) => {
+        useSession.getState().setOffline(st === 'offline');
+        if (st === 'online') void useSession.getState().refreshMe();
+      });
       useSession.getState().setMe(await backend.restore());
       useSession.getState().setReady();
     })();
     return () => {
       cancelled = true;
+      statusOff?.();
     };
   }, []);
 }
@@ -46,6 +52,10 @@ export function useStreetSync(): void {
       if (alive) useWorld.getState().setIncense(t.incenseToday);
     };
     void load();
+    // after a dropped connection missed street events are not replayed: refetch the street
+    const offStatus = backend.onStatus?.((st) => {
+      if (st === 'online') void load();
+    });
     const off = backend.onStreetEvent((e) => {
       useWorld.getState().apply(e, Date.now());
       if (e.type === 'incense') useWorld.getState().setIncense(useWorld.getState().incenseToday + 1);
@@ -72,6 +82,7 @@ export function useStreetSync(): void {
     return () => {
       alive = false;
       off();
+      offStatus?.();
       clearInterval(tick);
       document.removeEventListener('visibilitychange', onVisible);
     };

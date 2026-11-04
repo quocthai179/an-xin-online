@@ -298,3 +298,4 @@ small { color: var(--ink2); }
 .landing a.btn { text-decoration: none; }
 .landing a { color: var(--brand); }
 .landing a.btn { color: var(--brand-ink); }
+.offline-banner { background: #3a1212; color: #ffd0d0; }

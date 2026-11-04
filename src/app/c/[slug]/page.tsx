@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { resolvePublicCandidate } from '@/lib/shareData';
+import { getPublicCandidate } from '@/server/publicData';
 import { ZONES } from '@/lib/zones';
 
 type Props = {
@@ -13,7 +13,7 @@ async function load(p: Props) {
   const { slug } = await p.params;
   const sp = await p.searchParams;
   const d = Array.isArray(sp.d) ? sp.d[0] : sp.d;
-  return { slug, d, c: resolvePublicCandidate(slug, d, Date.now()) };
+  return { slug, d, c: await getPublicCandidate(slug, d, Date.now()) };
 }
 
 export async function generateMetadata(p: Props): Promise<Metadata> {
@@ -44,6 +44,7 @@ export default async function CandidateLanding(p: Props) {
       <p className="dim">
         {c.title} · <span style={{ color: zone.color, fontWeight: 700 }}>{zone.name}</span> · {c.xu} xu
       </p>
+      {c.placed && <p className="badge sample">Chúc mừng, bạn này vừa được bao trọn rồi!</p>}
       {c.sample && <p className="badge sample">Ứng viên mẫu, không có thật</p>}
       {c.demo && <p className="dim">Bản demo: dữ liệu chỉ nằm trong trình duyệt của người chia sẻ.</p>}
       <Link className="btn primary" href={`/?c=${encodeURIComponent(slug)}`}>

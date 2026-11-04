@@ -228,6 +228,9 @@ export interface PresenceApi {
   leave(): Promise<void>;
 }
 
+/** Connection state of a remote backend (the demo backend never goes offline). */
+export type BackendStatus = 'online' | 'offline';
+
 export interface Backend {
   readonly mode: Mode;
   restore(): Promise<Me | null>;
@@ -260,6 +263,8 @@ export interface Backend {
   markNotificationsRead(ids?: string[]): Promise<void>;
   onStreetEvent(cb: (e: StreetEvent) => void): () => void;
   onNotification(cb: (n: AppNotification) => void): () => void;
+  /** Optional: remote backends report connectivity; the UI shows a banner and refetches when it comes back. */
+  onStatus?(cb: (s: BackendStatus) => void): () => void;
   presence: PresenceApi;
   dispose(): void;
 }

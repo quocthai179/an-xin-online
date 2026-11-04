@@ -113,5 +113,22 @@ else
   failed=$((failed + 1)); echo "   FAIL concurrency.sh"; tail -n 20 "$OUT/concurrency.log" | sed 's/^/        /'
 fi
 
+echo "== seed"
+# seed.sql must apply cleanly (twice: idempotent) as `postgres`, and anon must see exactly the sample rows through the public read RPC
+SEED="$ROOT/supabase/seed.sql"
+want=$(grep -c '^insert into public.candidates' "$SEED")
+if q -U postgres -d fresh_again -f "$SEED" >"$OUT/seed1.log" 2>&1 && q -U postgres -d fresh_again -f "$SEED" >"$OUT/seed2.log" 2>&1 \
+   && ! grep -E 'ERROR|WARNING' "$OUT/seed1.log" "$OUT/seed2.log"; then
+  got=$(q -U postgres -d fresh_again -Atc "select count(*) from public.candidates where is_sample and user_id is null")
+  anon=$(q -U postgres -d fresh_again -Atc "set role anon; select count(*) from public.list_candidates()")
+  if [[ "$got" == "$want" && "$anon" == "$want" ]]; then
+    pass=$((pass + 1)); printf '   ok   %-28s %3d samples\n' "seed.sql" "$got"
+  else
+    failed=$((failed + 1)); echo "   FAIL seed.sql: expected $want samples, table has $got, anon list_candidates returns $anon"
+  fi
+else
+  failed=$((failed + 1)); echo "   FAIL seed.sql did not apply"; tail -n 20 "$OUT/seed1.log" "$OUT/seed2.log" | sed 's/^/        /'
+fi
+
 echo "== result: $pass passed check groups, $failed failed file(s)"
 [[ $failed -eq 0 ]]

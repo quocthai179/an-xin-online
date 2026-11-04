@@ -24,6 +24,8 @@ export interface PublicCandidate {
   sample: boolean;
   /** came from a `?d=` payload created in someone's browser (demo mode) */
   demo: boolean;
+  /** already hired (Supabase mode only) */
+  placed?: boolean;
 }
 
 /** Name coming from a query string: cleaned, <= 24 chars, never blocked or PII-like, otherwise a neutral fallback. */
