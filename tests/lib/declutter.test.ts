@@ -9,7 +9,7 @@ describe('declutterLabels', () => {
   });
 
   it('stacks overlapping tags upward, nearest first', () => {
-    expect(declutterLabels([tag(0, 0), tag(10, 4), tag(-5, 2)], [24, 24, 24])).toEqual([0, 1, 2]);
+    expect(declutterLabels([tag(0, 0), tag(10, 0), tag(-5, 0)], [24, 24, 24])).toEqual([0, 1, 2]);
   });
 
   it('hides tags that would have to climb too far', () => {

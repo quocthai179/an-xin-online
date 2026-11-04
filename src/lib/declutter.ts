@@ -17,7 +17,7 @@ const overlaps = (a: LabelRect, b: LabelRect, gap: number): boolean =>
  * `rects` must be sorted by priority (nearest first). Returns, per rect, how many tag heights it is lifted
  * (0 = untouched) or -1 when it has to be hidden. `step` is the lift per level in pixels for each rect (usually its height).
  */
-export function declutterLabels(rects: LabelRect[], step: number[], maxLevels = 3, gap = 2): number[] {
+export function declutterLabels(rects: LabelRect[], step: number[], maxLevels = 3, gap = 0): number[] {
   const placed: LabelRect[] = [];
   const levels: number[] = [];
   rects.forEach((r, i) => {

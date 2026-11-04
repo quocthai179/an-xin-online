@@ -1,18 +1,18 @@
 # Developer notes (phases P0-P4)
 
-Status: P0 scaffold, P1 pure lib, P2 migration + parity, P3 Backend + DemoBackend, P4 2D-first UI, P5 3D street, P6 multiplayer + juice and P7 sharing/OG are done.
-Not done (next developer): P8 SupabaseBackend, P9 hardening (see "P5-P7 notes" below for gaps).
+Status: all phases P0-P9 are done (P8 SupabaseBackend and P9 hardening: see "P8-P9 notes" at the end).
+Still open: things that need a real Supabase project or a real device (see "P8-P9 notes, remaining gaps").
 
 ## Deviations from DESIGN.md (all pragmatic)
 
 1. **Versions**: Next 16.4.5, React 19.3.1, R3F 9.8.2, drei 10.7.9, three 0.187.0, zustand 5.0.16, supabase-js 2.118.0, Vitest 5.1.0.
    Pinned **TypeScript 5.9.3** and **ESLint 9.39.5** (not the newest 7.x / 10.x) because Next's lint/type plugins target them.
-   `@playwright/test` is not installed; `e2e/demo-flow.cjs` uses the preinstalled `playwright` package directly.
+   `@playwright/test` 1.63.0 is pinned (same as the preinstalled Chromium build 1243); the old `e2e/demo-flow.cjs` was converted to `e2e/demo-flow.spec.ts`.
 2. **Fonts**: no `next/font/google` (the build must never need the network). CSS uses a system font stack with `Be Vietnam Pro` as an
    optional first choice, and the sign font stack `Patrick Hand, Segoe Print, ... cursive`. When P7 vendors the TTFs, add them with
    `next/font/local` and the canvas will pick them up (`SignCanvas` redraws after `document.fonts.ready`).
 3. **`createBackend()` is async** (returns `Promise<Backend>`) because the demo identity is claimed through Web Locks. With Supabase env
-   vars set it currently logs a warning and falls back to demo (P8).
+   vars set it returns the SupabaseBackend (P8).
 4. **SQL**: `private.clean()` regex range changed from `\u0000-\u0009` to `\u0001-\u0008` (and the TS twin strips `\u0000-\u0008`).
    Reason: PostgreSQL text cannot contain NUL, and stripping tab (`\u0009`) before the "collapse spaces/tabs" step would glue words
    together ("a<TAB>b" -> "ab"). Everything else in `0001_init.sql` is the DESIGN section 4 text verbatim (extracted by script).
@@ -39,7 +39,6 @@ Not done (next developer): P8 SupabaseBackend, P9 hardening (see "P5-P7 notes" b
 
 - Demo mode timestamps use the device clock (server time does not exist there).
 - `list_candidates` equivalent recomputes decayed sums per candidate on each read; fine for ~100 rows, revisit if the demo DB grows.
-- No Playwright test runner config yet (P9). `e2e/demo-flow.cjs` is a manual smoke script (2 tabs: xu -> 500k -> accept -> offer -> placed).
 - The 3D "gift effects" (coin arc) have a 2D CSS equivalent only (`.fly`).
 - `Be Vietnam Pro` is not bundled; glyph coverage relies on system fonts.
 
@@ -71,5 +70,43 @@ Not done (next developer): P8 SupabaseBackend, P9 hardening (see "P5-P7 notes" b
 - Coin/note/confetti effects and reactions were verified by code and e2e (no errors) but their flight was not visually captured (swiftshader frame rate).
 - Pose receivers only listen to the current zone + nearest neighbour topic (zone sharding), so two users in far zones do not see each other.
 - Remote walkers have no leg animation (bob + lean only). No collision between walkers and trees/lamps.
-- OG: no Supabase `get_candidate`; seeds + `?d=` only. Fortune OG shows the tier, name, verdict and advice.
+- OG: Supabase `get_candidate` is now read by `src/server/publicData.ts` (P8). Fortune OG shows the tier, name, verdict and advice.
 - `/c/<slug>` for a user-created demo candidate only works with the `?d=` link; without it the page is a 404 (server cannot read localStorage).
+
+## P8-P9 notes (SupabaseBackend, hardening)
+
+### P8: what was built
+- `src/backend/supabase/`: `browser.ts` (client: anonymous session persisted in localStorage, auto refresh), `SupabaseBackend.ts`, `mappers.ts`
+  (snake_case jsonb -> domain types, `toResult` = RPC envelope -> `Result`), `presence.ts`.
+- RPC names/params are exactly those of `0001_init.sql` (`p_*`); `upsert_my_candidate` takes one jsonb `p`. `get_temple_stats` returns bare jsonb
+  (no `{ok}` envelope), `light_incense` wraps it. Invitations/offers/notifications lists are RLS-filtered table selects (`select *`, newest first, limit 100/50).
+  Pending-but-past-due invitations/offers are shown as `expired` on read (SQL only expires lazily on writes).
+- Errors: envelope code if known, otherwise `NETWORK`; PostgREST `42501` -> `UNAUTHENTICATED`; transport failure -> `NETWORK` plus status `offline`.
+- Realtime: one private `street` channel (DB broadcasts + presence, key = uid) and private `inbox:<uid>`; `realtime.setAuth()` after sign-in and on
+  `TOKEN_REFRESHED`. Zone channels `pos:<zone>` (current + neighbour) carry `pose`/`react` with the same compact payload as demo mode.
+  Online count = number of presence keys on `street`. Poses are not published while the tab is hidden.
+- New optional `Backend.onStatus()` (`online`/`offline`); `useBoot` mirrors it in `useSession().offline`, `StreetApp` shows an offline banner, `useStreetSync` refetches
+  the street when the connection returns. Sign-in is retried every 10 s while offline; `restore()` gives up after 8 s so the onboarding is never blocked.
+- `createBackend()` falls back to demo only if constructing the Supabase backend throws (e.g. a malformed URL); an unreachable server does not fall back (that would mix data).
+- `src/server/publicData.ts` -> `getPublicCandidate()` (anon RPC `get_candidate`, 4 s timeout). Unknown/hidden/unreachable -> shipped samples only; `?d=` is ignored in Supabase mode.
+  The landing page shows a "vừa được bao" line for placed candidates; a sign under review is never shown (placeholder text).
+- `/api/admin/moderate` (`GET` pending list, `POST {candidateId, action}`), header `x-admin-key` compared via SHA-256 + `timingSafeEqual` (`src/server/admin.ts`),
+  503 when `SUPABASE_SERVICE_ROLE_KEY`/`ADMIN_KEY`/URL are missing, 401 on a wrong key. No rate limit on failed attempts (add one at the edge if exposed publicly).
+- `supabase/seed.sql` is generated from `src/lib/seed.ts` (see README); `pnpm test:db` applies it twice and checks anon sees all 40 samples. `supabase/config.toml` enables anonymous sign-ins locally.
+- No SQL was changed: the public read RPCs (`list_candidates`, `get_candidate`, `get_temple_stats`) are already granted to `anon`, so there is no `0002` migration.
+
+### P9: what was built
+- Playwright: `playwright.config.ts` (port 3100, `pnpm build && pnpm start`, demo mode forced, SwiftShader args), specs in `e2e/`: `demo-flow`, `street-3d`, `share`, `a11y`,
+  and `supabase-offline` (skipped unless built against an unreachable Supabase, instructions at the top of the file).
+- a11y: `Modal` now has `aria-labelledby`, traps Tab/Shift+Tab even when the dialog container has focus, stops Esc propagation and makes the rest of `.app` `inert` while open.
+  Mute/menu buttons have stable labels. `prefers-reduced-motion`: all CSS animations/transitions off; 3D walker bob, camera easing, coin/confetti, tap-marker pulse and incense smoke already/now respect it.
+- Name tags: `src/lib/declutter.ts` + `Labels` in `People.tsx` project tags to screen space every frame and lift overlapping ones by whole tag heights (hide after 3 levels), nearest first.
+- Perf: `PerformanceMonitor` `onDecline` and `onFallback` both drop DPR to 1 (`data-degraded` on `.scene-wrap`). Disposal was audited: every geometry, material, texture cache and sprite material created in `components/scene/**` is disposed on unmount.
+- CSP `connect-src` lists only `'self'` plus the origin and websocket origin of `NEXT_PUBLIC_SUPABASE_URL` when it is set (nothing Supabase-related in demo mode); computed at build time.
+
+### P8-P9 notes, remaining gaps
+- The SupabaseBackend has only been tested against a mocked client and an unreachable URL, never against a live project: do the first-deploy checklist in `DB-VERIFICATION.md` section 6 (Realtime authorization, `realtime.send` delivery, anonymous sign-in IP header).
+- Presence/pose channels were not load-tested. Two tabs of one browser share the same Supabase user (same session), so the 2-tab demo flow does not apply in Supabase mode: use two browsers/profiles.
+- `inbox:<uid>` is subscribed as soon as the anonymous session exists, before the user has a profile; that is allowed by the policy (it only checks `auth.uid()`).
+- Sample candidates exist in Supabase only after `seed.sql` runs; `/c/<sample-slug>` works either way (shipped seeds as fallback).
+- Reduced-motion and focus trap are covered by e2e; screen-reader behaviour was not tried with a real reader. FPS on real devices is still unmeasured.
