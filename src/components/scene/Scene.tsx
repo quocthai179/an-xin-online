@@ -64,7 +64,7 @@ export default function Scene() {
   }, []);
 
   return (
-    <div className="scene-wrap">
+    <div className="scene-wrap" data-degraded={degraded ? 1 : 0}>
       <Canvas
         dpr={dpr}
         flat
@@ -72,7 +72,7 @@ export default function Scene() {
         camera={{ fov: 55, near: 0.1, far: 90, position: [0, 4, 15] }}
         aria-label="Phố Xin Việc 3D"
       >
-        <PerformanceMonitor onDecline={() => setDegraded(true)} />
+        <PerformanceMonitor onDecline={() => setDegraded(true)} onFallback={() => setDegraded(true)} />
         <Lights light={light} />
         <StreetStatic light={light} />
         <Candidates />

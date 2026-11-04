@@ -6,6 +6,7 @@ import { CanvasTexture, DoubleSide, type Mesh, MeshBasicMaterial, MeshLambertMat
 import { useFontsReady } from '@/hooks/useFontsReady';
 import { toRanked, useWorld } from '@/state/world';
 import { input } from '@/state/input';
+import { prefersReducedMotion } from '@/scene-lib/capability';
 import { PLAZA, ZONE_LENGTH, zoneStartZ } from '@/lib/layout';
 import { ZONE_IDS } from '@/lib/rules';
 import { ZONES } from '@/lib/zones';
@@ -182,10 +183,14 @@ function IncenseSmoke() {
   const ref = useRef<InstancedMesh>(null);
   const N = 18;
   const origin = incenseSmokeOrigin();
+  const reduced = useMemo(() => prefersReducedMotion(), []);
+  const frozen = useRef(false);
   useFrame(({ clock }) => {
     const m = ref.current;
     if (!m || input.player.z < -30) return;
-    const t = clock.elapsedTime;
+    if (reduced && frozen.current) return; // reduced motion: draw the puffs once, then leave them still
+    frozen.current = true;
+    const t = reduced ? 0 : clock.elapsedTime;
     for (let i = 0; i < N; i++) {
       const phase = ((t * 0.32 + i / N) % 1 + 1) % 1;
       const s = Math.sin(phase * Math.PI) * (0.18 + phase * 0.5);

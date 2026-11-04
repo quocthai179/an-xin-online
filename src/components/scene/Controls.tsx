@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Raycaster, Vector2, type Mesh } from 'three';
 import { PLAZA, BOUNDS } from '@/lib/layout';
@@ -8,6 +8,7 @@ import { pickTarget, rayGround, type PickTarget } from '@/lib/picking';
 import { input, resetInput } from '@/state/input';
 import { useUi } from '@/state/ui';
 import { sceneData } from '@/scene-lib/sceneData';
+import { prefersReducedMotion } from '@/scene-lib/capability';
 
 const TAP_PX = 8;
 const TAP_MS = 350;
@@ -142,6 +143,7 @@ export function PointerController() {
     };
   }, [gl, camera]);
 
+  const reduced = useMemo(() => prefersReducedMotion(), []);
   useFrame(({ clock }) => {
     const m = marker.current;
     if (!m) return;
@@ -149,7 +151,7 @@ export function PointerController() {
     m.visible = !!t;
     if (t) {
       m.position.set(t.x, 0.12, t.z);
-      m.scale.setScalar(1 + Math.sin(clock.elapsedTime * 6) * 0.12);
+      m.scale.setScalar(reduced ? 1 : 1 + Math.sin(clock.elapsedTime * 6) * 0.12);
     }
   });
 

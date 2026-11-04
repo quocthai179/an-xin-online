@@ -226,8 +226,7 @@ small { color: var(--ink2); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .toast, .fly, .tube.shake { animation: none; }
-  .btn { transition: none; }
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
 
 /* 3D street */

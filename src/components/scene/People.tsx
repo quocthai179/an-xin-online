@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Color, type PerspectiveCamera, type Group, type InstancedMesh, MeshLambertMaterial, Object3D, Sprite, SpriteMaterial } from 'three';
+import { Color, type PerspectiveCamera, type Group, type InstancedMesh, MeshLambertMaterial, Object3D, Sprite, SpriteMaterial, Vector3 } from 'three';
 import type { AvatarSpec } from '@/backend/types';
 import { groundY, SPAWN, zonesAtZ } from '@/lib/layout';
 import { constrain, inputToWorld, stepMover, toTarget, type Mover } from '@/lib/movement';
@@ -12,6 +12,7 @@ import { useSession } from '@/state/session';
 import { walkerHead, walkerLegs, walkerTorso } from '@/scene-lib/geometry/avatar';
 import { drawNameTag } from '@/scene-lib/labelTexture';
 import { PANTS, pick, SHIRT, SKIN } from '@/scene-lib/palette';
+import { declutterLabels } from '@/lib/declutter';
 import { sceneData } from '@/scene-lib/sceneData';
 import { TextureCache } from '@/scene-lib/textureCache';
 import { prefersReducedMotion } from '@/scene-lib/capability';
@@ -20,6 +21,7 @@ import { useFontsReady } from '@/hooks/useFontsReady';
 const RENDER_DELAY_MS = 120;
 const dummy = new Object3D();
 const tint = new Color();
+const v3 = new Vector3();
 
 function useWalkerParts() {
   return useMemo(
@@ -240,6 +242,7 @@ interface Slot {
 /** Name tags: nearest remote walkers (8) and nearest candidates (4) via a fixed pool of sprites and a texture LRU. */
 export function Labels() {
   const SLOTS = 12;
+  const { camera, size } = useThree();
   const cache = useMemo(() => new TextureCache(40), []);
   const sprites = useMemo(
     () =>
@@ -308,6 +311,7 @@ export function Labels() {
         sp.visible = true;
       }
     }
+    const live: number[] = [];
     for (let i = 0; i < SLOTS; i++) {
       const sl = slots.current[i];
       if (!sl) continue;
@@ -321,8 +325,31 @@ export function Labels() {
       } else {
         sprites[i].position.set(sl.x, sl.y, sl.z);
       }
+      sprites[i].visible = true;
+      live.push(i);
     }
+    declutter(live, camera as PerspectiveCamera, size.width, size.height);
   });
+
+  /** Lift or hide tags that overlap on screen (walkers standing close together). */
+  const declutter = (live: number[], cam: PerspectiveCamera, W: number, H: number) => {
+    const items = live
+      .map((i) => {
+        const sp = sprites[i];
+        const d = Math.max(0.5, sp.position.distanceTo(cam.position));
+        sp.getWorldPosition(v3).project(cam);
+        const ppu = H / (2 * Math.tan((cam.fov * Math.PI) / 360) * d); // pixels per world unit at this tag
+        return { i, d, behind: v3.z > 1, x: (v3.x * 0.5 + 0.5) * W, y: (-v3.y * 0.5 + 0.5) * H, w: sp.scale.x * ppu, h: sp.scale.y * ppu, ppu };
+      })
+      .sort((a, b) => a.d - b.d);
+    const vis = items.filter((it) => !it.behind);
+    const levels = declutterLabels(vis, vis.map((it) => it.h * 1.05));
+    vis.forEach((it, k) => {
+      const sp = sprites[it.i];
+      if (levels[k] < 0) sp.visible = false;
+      else sp.position.y += (levels[k] * it.h * 1.05) / it.ppu;
+    });
+  };
 
   return (
     <>

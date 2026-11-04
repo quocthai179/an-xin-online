@@ -31,7 +31,7 @@ export function Hud({ onToggleView, sceneAvailable, view }: { onToggleView: () =
       <div className="brand">
         <span aria-hidden>🪧</span> <strong>Phố Xin Việc</strong>
         <span className="online" title="Số người đang đi dạo">● {online} người đang đi dạo</span>
-        <button className="btn small hud-burger" onClick={() => setMenu(!menu)} aria-expanded={menu} aria-label="Mở menu">
+        <button className="btn small hud-burger" onClick={() => setMenu(!menu)} aria-expanded={menu} aria-label={menu ? 'Đóng menu' : 'Mở menu'}>
           {menu ? '✕' : '☰'}
         </button>
       </div>
@@ -65,7 +65,7 @@ export function Hud({ onToggleView, sceneAvailable, view }: { onToggleView: () =
         <button className="btn small" onClick={() => setPanel({ kind: 'board' })}>🏆 Xếp hạng</button>
         <button className="btn small" onClick={() => setPanel({ kind: 'temple' })}>🪔 Đền</button>
         {sceneAvailable && <button className="btn small" onClick={onToggleView}>{view === '2d' ? '🎮 Phố 3D' : '📋 Danh sách'}</button>}
-        <button className="btn small ghost" onClick={toggleMute} aria-pressed={muted} aria-label={muted ? 'Bật âm thanh' : 'Tắt âm thanh'}>
+        <button className="btn small ghost" onClick={toggleMute} aria-pressed={!muted} aria-label="Âm thanh" title={muted ? 'Bật âm thanh' : 'Tắt âm thanh'}>
           {muted ? '🔇' : '🔊'}
         </button>
         {backend?.mode === 'demo' && (
