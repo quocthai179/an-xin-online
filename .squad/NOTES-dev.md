@@ -139,3 +139,11 @@ Fixed on the client/server side (DB-engineer parts live in `supabase/**`, `engin
 - **Viral polish**: own coin throws get a longer arc and the "leng keng" lands with the coin; "Chụp ảnh phố" button (renders one frame on demand, no `preserveDrawingBuffer`, watermark `phoxinviec`). DOM name tags are not part of the PNG.
 
 Not done / notes: hidden candidates in `get_candidate` details still map to `sitting` for the owner view (type has no `hidden`); HR-promotion CAPTCHA (only anon sign-in is protected); IP-keyed limits behind Vercel rely on `x-vercel-forwarded-for`/`x-real-ip`.
+
+## Integration round (HEAD eac6af8 onwards)
+
+- Error codes `MODERATION_LOCKED`, `BANNED`, `TOO_NEW` are known to `mappers.ts`. `InviteForm` shows a mm:ss countdown from `retryAfterSec` on TOO_NEW and disables the button meanwhile.
+- Event mapping: a stream candidate ref without `id` gets `''`, without `zone` gets `null` (anonymous ticker events; world/3D effects look the id up and simply find nothing). `placed.name` is mapped.
+- Admin route: actions `approve_sign | remove_sign | hide | unhide | delete | ban | unban` (candidate based) and `{userId, action: ban_user | unban_user, reason?}` -> `admin_ban_user`; `GET ?offset=&limit=` -> `admin_list_pending(p_offset, p_limit)`.
+- **Demo relaxes the account-age gates**: `engine.Ctx.relaxAgeGates` (set from `DemoDeps.relaxAgeGates`, which only `demo/browser.ts` turns on) disables the HR 10-minute TOO_NEW gate and the reporter >= 1 h counted-age gate. Default is strict, so `tests/backend/*` and the parity tests keep exercising the real rules (they `advance` the clock). The report threshold (5) is the same in both.
+- DEF-2: "Đổi người (demo)" sets `pxv:fresh` in sessionStorage; the next `claimIdentity` creates a new user. DEF-3: `errorMessage(VALIDATION, 'sign_text')` names the rule (5-80 chars, max 2 lines). DEF-4: `render()` omits `fonts` when none loaded (an explicit empty array makes satori throw). Double-submit guard (`inflight` ref) in Onboarding and CandidateForm for the flaky double-click test.

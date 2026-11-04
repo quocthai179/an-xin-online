@@ -123,3 +123,15 @@ Engine rules were still changing during the session; counts are from the last ru
 AC-4.3 (share URL after delete), AC-6.1 movement result, AC-6.3/6.4 collision and server speed limit, AC-7.2/7.4 presence timeout and 50-avatar cap,
 AC-13.3 offline unread list, AC-14.1 ticker latency, AC-17.4 anonymous incense toast, AC-18.2 download/copy buttons, BR-SP5 honeypot,
 real Supabase mode end to end (only DB-level tests), 3D tap-to-walk, multi-browser identity restore, TOO_NEW and reporter-age messaging in the UI.
+
+## Re-verification (orchestrator, after integration round)
+| Defect | Status | Evidence |
+|---|---|---|
+| DEF-1 contact unlocked on send | Fixed | qa-gaps + rules-ui contact specs green |
+| DEF-2 "Đổi người (demo)" didn't switch | Fixed | exploratory spec un-fixme'd, green |
+| DEF-3 generic sign-length message | Fixed | specific message "Biển carton phải dài 5–80 ký tự và tối đa 2 dòng." |
+| DEF-4 OG fallback 500 without fonts | Fixed | `render()` omits empty `fonts` |
+| DEF-5 old tests vs new rules | Fixed | demo.test.ts updated (clock advance, LIMITS.reportsToHideSign) |
+| Flaky double-click | Mitigated | in-flight submit guard; 50/50 e2e green |
+
+Final run: `pnpm test` 451/451 · `pnpm test:db` 87/87 groups · `pnpm test:e2e` 50 passed, 2 skipped (supabase-offline needs special build) · typecheck/lint clean · build OK.

@@ -143,7 +143,7 @@ Ghi chú: Có thể đổi vai trò Xem → Ứng viên/HR sau (giữ cùng user
 
 **US-8 Bấm ứng viên xem CV** — *As a* HR/khách, *I want* bấm vào ứng viên để xem CV, *so that* đánh giá.  Priority: Must
 - AC-8.1 Given ứng viên ở trong tầm nhìn, when click/tap avatar hoặc cái nón, then mở panel CV gồm: sign, title, năm KN, skills, lương mong muốn, địa điểm/remote, bio, trạng thái, số xu nhận được, số ngày ngồi lì, thứ hạng trong zone.
-- AC-8.2 Link liên hệ **không** hiển thị cho tới khi điều kiện BR-Privacy thỏa; panel hiển thị "Thả 500k để mở liên hệ".
+- AC-8.2 Link liên hệ **không** hiển thị cho tới khi điều kiện BR-Privacy thỏa; panel hiển thị "Thả 500k để mở liên hệ. Liên hệ chỉ mở sau khi ứng viên nhận lời 500k của bạn."
 - AC-8.3 Panel đóng được bằng nút X và phím Esc; mở panel không chặn việc nhận realtime.
 - AC-8.4 Có nút "Báo cáo" (US-20) trên panel.
 
@@ -157,7 +157,7 @@ Ghi chú: Có thể đổi vai trò Xem → Ứng viên/HR sau (giữ cùng user
 
 **US-10 Thả tờ 500k (mời phỏng vấn)** — *As a* HR, *I want* mời phỏng vấn, *so that* tiến tới tuyển.  Priority: Must
 - AC-10.1 Given HR còn quota 500k, when bấm "Thả 500k", then hiện form ngắn (lời nhắn ≤ 200 ký tự, bắt buộc; thông tin liên hệ HR: email/link, bắt buộc), sau khi gửi: quota -1, tờ 500k rơi vào nón, tạo lời mời trạng thái "Chờ phản hồi".
-- AC-10.2 Given lời mời tạo xong, then HR được mở khóa link liên hệ của ứng viên (BR-Privacy) và ứng viên nhận thông báo kèm thông tin HR.
+- AC-10.2 Given lời mời tạo xong, then ứng viên nhận thông báo kèm thông tin HR; link liên hệ của ứng viên **chỉ** được mở cho HR đó sau khi ứng viên **nhận lời** (BR-Privacy). Ở production, HR mới tạo phải đợi 10 phút mới thả được 500k (`TOO_NEW`, hiện đếm ngược); demo mode trên trình duyệt nới cổng này.
 - AC-10.3 Ứng viên có thể "Nhận lời" hoặc "Từ chối" (mặc định kèm lý do ngắn tùy chọn); HR thấy trạng thái cập nhật realtime.
 - AC-10.4 Lời mời "Chờ phản hồi" quá 14 ngày tự chuyển "Hết hạn".
 - AC-10.5 Trùng lặp: cùng cặp (HR, ứng viên) chỉ có 1 lời mời đang mở tại một thời điểm.
@@ -223,12 +223,12 @@ Ghi chú: Có thể đổi vai trò Xem → Ứng viên/HR sau (giữ cùng user
 
 ### v2 stories (tóm tắt, chi tiết ở §4 Viral)
 - **US-19 Tường vinh danh "Được bao"** (Should, có thể MVP-lite: danh sách tĩnh trong UI): hiển thị ứng viên đã được bao, bảng tên công ty (nếu đồng ý).
-- **US-20 Báo cáo & kiểm duyệt** (Must, MVP-lite): nút Báo cáo trên panel/biển; lý do (chọn); lưu vào bảng report; ≥ 3 báo cáo từ 3 user khác nhau thì sign tự ẩn chờ duyệt (BR-Mod). Giao diện admin để v2, MVP có thể xem qua DB/endpoint bảo vệ bằng ADMIN_KEY.
+- **US-20 Báo cáo & kiểm duyệt** (Must, MVP-lite): nút Báo cáo trên panel/biển; lý do (chọn); lưu vào bảng report; ≥ 5 báo cáo hợp lệ (từ 5 user khác nhau, mỗi tài khoản báo cáo ≥ 1 giờ tuổi) thì sign tự ẩn chờ duyệt (BR-Mod). Giao diện admin để v2, MVP có thể xem qua DB/endpoint bảo vệ bằng ADMIN_KEY.
 - **US-21 Chat bubble ngắn** (Could, v2), **US-22 Tùy biến avatar** (Should, v2), **US-23 Badge** (Should, v2), **US-24 HR verification** (Should, v2), **US-25 Leaderboard tuần** (Should, v2/MVP-lite), **US-26 Sự kiện theo mùa** (Could, v2), **US-27 Referral** (Should, v2), **US-28 Ngày/đêm + thời tiết** (Could, v2).
 
 **US-20 Báo cáo** chi tiết AC:
 - AC-20.1 Given tôi xem sign/hồ sơ, when bấm Báo cáo, chọn lý do (Tục tĩu / Công kích cá nhân / Spam / Thông tin cá nhân / Khác) và gửi, then ghi nhận 1 report; mỗi user chỉ báo cáo mỗi hồ sơ 1 lần.
-- AC-20.2 Given hồ sơ đạt ngưỡng 3 report từ 3 user khác nhau, then sign tự ẩn (thay bằng "Biển đang chờ duyệt") và chủ hồ sơ được thông báo.
+- AC-20.2 Given hồ sơ đạt ngưỡng 5 report từ 5 user khác nhau, mỗi người có tài khoản ≥ 1 giờ tuổi (report từ tài khoản mới hơn được lưu nhưng không được tính), then sign tự ẩn (thay bằng "Biển đang chờ duyệt") và chủ hồ sơ được thông báo.
 
 ---
 
@@ -343,7 +343,7 @@ score = 3.0 * Σ_hrCoin(e)   * decay(age_e)
 - 1 lần/user/ngày (cùng ngày giờ VN); cosmetic only (xem AC-17.3).
 
 ### BR-Privacy — Quyền riêng tư & liên hệ
-**Quyết định:** link liên hệ của ứng viên **ẩn** với mọi người; chỉ **HR đã thả 500k hợp lệ** cho ứng viên đó mới thấy (và ứng viên thấy liên hệ + thông tin HR trong lời mời). 
+**Quyết định (cập nhật 2026-11-04, security audit H1):** link liên hệ của ứng viên **ẩn** với mọi người; chỉ **HR có lời mời 500k mà ứng viên đã NHẬN LỜI** mới thấy (thả 500k chưa đủ; từ chối/hết hạn thì khóa lại). Ứng viên thấy liên hệ + thông tin HR trong lời mời. 
 Lý do: (1) giữ 500k có giá trị thật ("mở khóa liên hệ"), (2) chống scrape/spam email hàng loạt vì có quota 3 tờ/ngày, (3) ứng viên yên tâm hơn nên dám tham gia, (4) HR vẫn đủ thông tin (title, skills, lương, địa điểm, bio) để quyết định trước khi tốn quota.
 - Ứng viên có thể chọn "Cho phép xem liên hệ sau khi thả xu" (opt-in nới lỏng, v2) hoặc "Chỉ khi tôi nhận lời" (chặt hơn, default giữ như trên).
 - Ứng viên không công khai tên thật mặc định, chỉ display name. Nhắc ứng viên trong form: "Đừng ghi công ty hiện tại nếu không muốn sếp thấy."
@@ -365,7 +365,7 @@ Lý do: (1) giữ 500k có giá trị thật ("mở khóa liên hệ"), (2) ch�
 - BR-M2: Chuẩn hóa (NFKC, lowercase, bỏ dấu để so khớp phiên bản không dấu, bỏ ký tự phân cách giữa chữ như "đ.m", "d m") rồi so với blocklist (tục tĩu, phân biệt/kỳ thị, công kích cá nhân, quấy rối, từ khóa quảng cáo/lừa đảo/đa cấp, tiền ảo).
 - BR-M3: Blocklist ở file cấu hình riêng (`blocklist.vi.txt`), dễ cập nhật không cần deploy logic; có allowlist cho từ vô hại bị khớp nhầm (ví dụ "Địa danh"). Team cung cấp danh sách ban đầu; không hardcode trong code logic.
 - BR-M4: Chặn: URL trong sign/bio (chỉ cho phép ở field link liên hệ), email/SĐT trong sign/bio (tránh lộ/spam), tên riêng của người thật/sếp cũ thì không tự phát hiện được: dựa vào report.
-- BR-M5: Report: xem US-20; 3 report từ 3 user khác nhau thì auto-ẩn; chủ có thể kháng nghị (v2).
+- BR-M5: Report: xem US-20; 5 report hợp lệ (5 user khác nhau, tài khoản ≥ 1 giờ tuổi; ngưỡng nâng từ 3 sau security audit M2) thì auto-ẩn; chủ không tự hiện lại được khi bị khóa kiểm duyệt (MODERATION_LOCKED) cho tới khi admin `unhide`; chủ có thể kháng nghị (v2).
 - BR-M6: Admin có thể gỡ hồ sơ/sign (MVP: endpoint hoặc script quản trị với ADMIN_KEY).
 
 ---
@@ -465,7 +465,7 @@ Nguyên tắc: **ứng viên là người kể chuyện, không phải người 
 | # | Câu hỏi | Ảnh hưởng nếu không trả lời | Default đề xuất (dev cứ làm theo) |
 |---|---|---|---|
 | Q1 | Quota xu/500k cho HR là bao nhiêu? | Cân bằng game | 10 xu/ngày, 2 xu/ứng viên/ngày; 3 tờ 500k/ngày, 1 lần/ứng viên/7 ngày |
-| Q2 | Liên hệ ứng viên hiện khi nào? | Quyền riêng tư và giá trị 500k | Chỉ hiện cho HR đã thả 500k hợp lệ (BR-Privacy) |
+| Q2 | Liên hệ ứng viên hiện khi nào? | Quyền riêng tư và giá trị 500k | Chỉ hiện cho HR có lời mời được ứng viên nhận lời (BR-Privacy) |
 | Q3 | Bao trọn có cần 500k được nhận lời trước không? | Luồng offer | Có: phải có 500k đã "Nhận lời" |
 | Q4 | Sau "Đã được bao", ứng viên còn hiển thị không? | UX, viral | Còn, ở Tường vinh danh, mất seat, không nhận xu mới; có thể ngồi lại |
 | Q5 | Có cần HR verification ở MVP? | Độ tin cậy | Không; nhãn "chưa xác minh", làm v2 |
@@ -479,7 +479,7 @@ Nguyên tắc: **ứng viên là người kể chuyện, không phải người 
 | Q13 | Tuổi tối thiểu và điều khoản? | Pháp lý | 16+, trang điều khoản/riêng tư tối thiểu |
 | Q14 | Có cho phép seed/demo candidate và bot? | Cold start | Có, gắn nhãn "Mẫu", bật bằng config |
 | Q15 | Lời mời hết hạn có hoàn tờ 500k không? | Cảm nhận công bằng | Không hoàn ở MVP |
-| Q16 | Xử lý moderation vận hành ai làm? | Rủi ro nội dung | Owner dùng endpoint admin + ADMIN_KEY; auto-ẩn sau 3 report |
+| Q16 | Xử lý moderation vận hành ai làm? | Rủi ro nội dung | Owner dùng endpoint admin + ADMIN_KEY; auto-ẩn sau 5 report hợp lệ |
 | Q17 | Ngôn ngữ giao diện ngoài tiếng Việt? | Phạm vi | Chỉ tiếng Việt |
 | Q18 | Xử lý hạng khi hòa điểm? | Tính xác định | Theo BR-Rank (ngồi lì > created_at > id) |
 

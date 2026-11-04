@@ -25,7 +25,7 @@ offline **demo mode** (localStorage + BroadcastChannel) so `pnpm dev` works with
 - **Ứng viên**: biển tự trào (có mẫu gợi ý), CV công khai tối thiểu, liên hệ chỉ mở cho HR đã thả 500k, ẩn khỏi ticker, ẩn/xóa hồ sơ.
 - **Đền và quẻ**: thắp nhang mỗi ngày, xin quẻ cố định theo người và ngày, chia sẻ thẻ quẻ.
 - **Chia sẻ**: `/c/<slug>` có ảnh OG động (tiếng Việt đủ dấu), nút chia sẻ, tải ảnh, Zalo/Facebook.
-- **An toàn nội dung**: bộ lọc từ cấm (chuẩn hóa Unicode, leet, ký tự ẩn), chặn thông tin cá nhân trên biển/bio, báo cáo (3 người báo cáo
+- **An toàn nội dung**: bộ lọc từ cấm (chuẩn hóa Unicode, leet, ký tự ẩn), chặn thông tin cá nhân trên biển/bio, báo cáo (5 người báo cáo
   thì biển tự ẩn chờ duyệt), trang quản trị `/api/admin/moderate`.
 - **Hai chế độ backend**: Supabase thật hoặc demo cục bộ, cùng một interface `Backend`.
 - **Trợ năng**: danh sách 2D thay cho 3D, hộp thoại bẫy phím Tab và đóng bằng Esc, nhãn cho nút biểu tượng, `prefers-reduced-motion`.
@@ -112,6 +112,10 @@ Nếu Supabase không với tới được, app hiện banner "Mất kết nối
 4. CSP được đặt theo từng request trong `src/proxy.ts` (nonce + `'strict-dynamic'`, `base-uri 'none'`, `form-action 'self'`, `object-src 'none'`; HSTS và COOP nằm trong `next.config.ts`) và chỉ cho phép `connect-src` tới đúng host Supabase đã cấu hình (https và wss), không dùng wildcard.
 5. Sau deploy: làm theo checklist smoke test trong `.squad/DB-VERIFICATION.md` mục 6, và thử `/c/mau-backend-1` (ảnh OG phải ra PNG).
 
+## Demo mode và luật tuổi tài khoản
+
+Ở production (Supabase) HR mới tạo phải đợi 10 phút mới thả được 500k (`TOO_NEW`) và báo cáo chỉ được tính khi tài khoản báo cáo đã >= 1 giờ tuổi; biển tự ẩn khi có 5 người báo cáo hợp lệ. Trong **demo mode trên trình duyệt** hai cổng tuổi này được nới (`relaxAgeGates: true` trong `src/backend/demo/browser.ts`) vì chúng làm demo một máy không dùng được và không có gì để lạm dụng. Ngưỡng 5 báo cáo vẫn giữ nguyên. Engine mặc định vẫn nghiêm ngặt nên test engine/parity chạy đúng luật thật.
+
 ## Biến môi trường
 
 | Biến | Nơi dùng | Mô tả |
@@ -140,9 +144,12 @@ Nếu Supabase không với tới được, app hiện banner "Mất kết nối
 Kiểm duyệt thủ công (khi biển bị báo cáo và chờ duyệt):
 
 ```bash
-curl -H "x-admin-key: $ADMIN_KEY" https://<domain>/api/admin/moderate                      # danh sách chờ duyệt
+curl -H "x-admin-key: $ADMIN_KEY" "https://<domain>/api/admin/moderate?offset=0&limit=50"  # danh sách chờ duyệt (phân trang, limit 1..200)
 curl -X POST -H "x-admin-key: $ADMIN_KEY" -H "content-type: application/json" \
-  -d '{"candidateId":"<uuid>","action":"approve_sign"}' https://<domain>/api/admin/moderate  # approve_sign | remove_sign | hide | delete
+  -d '{"candidateId":"<uuid>","action":"approve_sign"}' https://<domain>/api/admin/moderate  # approve_sign | remove_sign | hide | unhide | delete | ban | unban
+# cấm / bỏ cấm một tài khoản (kể cả HR chưa có hồ sơ ứng viên), qua admin_ban_user
+curl -X POST -H "x-admin-key: $ADMIN_KEY" -H "content-type: application/json" \
+  -d '{"userId":"<uuid>","action":"ban_user","reason":"lừa đảo"}' https://<domain>/api/admin/moderate  # ban_user | unban_user
 ```
 
 ## Giọng điệu và an toàn
