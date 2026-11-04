@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse, type NextRequest } from 'next/server';
-import { adminKeyMatches, parseModerateBody } from '@/server/admin';
+import { ADMIN_KEY_MIN_LENGTH, adminKeyMatches, auditLog, parseModerateBody } from '@/server/admin';
+import { clientIp, limits, tooMany } from '@/server/rateLimit';
 
 // Moderation queue for the operator (BR-M6). Server only: the service role key never reaches the browser.
 //   GET  /api/admin/moderate                      -> candidates whose sign is pending review
@@ -11,13 +12,23 @@ export const dynamic = 'force-dynamic';
 const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
 
 function authorize(req: NextRequest) {
+  const ip = clientIp(req.headers);
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const service = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const adminKey = process.env.ADMIN_KEY;
-  if (!url || !service || !adminKey) return { res: json({ error: 'NOT_CONFIGURED' }, 503) };
-  if (!adminKeyMatches(req.headers.get('x-admin-key'), adminKey)) return { res: json({ error: 'UNAUTHORIZED' }, 401) };
+  // L3: a short key is a misconfiguration, not a weaker mode
+  if (!url || !service || !adminKey || adminKey.length < ADMIN_KEY_MIN_LENGTH) return { res: json({ error: 'NOT_CONFIGURED' }, 503) };
+  if (!limits.admin(ip) || limits.adminBlocked(ip)) {
+    auditLog({ event: 'admin_throttled', ip });
+    return { res: tooMany() };
+  }
+  if (!adminKeyMatches(req.headers.get('x-admin-key'), adminKey)) {
+    limits.adminFailure(ip);
+    auditLog({ event: 'admin_unauthorized', ip, method: req.method });
+    return { res: json({ error: 'UNAUTHORIZED' }, 401) };
+  }
   const client = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
-  return { client };
+  return { client, ip };
 }
 
 export async function GET(req: NextRequest) {
@@ -25,6 +36,7 @@ export async function GET(req: NextRequest) {
   if (!a.client) return a.res;
   const { data, error } = await a.client.rpc('admin_list_pending');
   if (error) return json({ error: 'UPSTREAM' }, 502);
+  auditLog({ event: 'admin_list_pending', ip: a.ip, count: Array.isArray(data) ? data.length : 0 });
   return json({ pending: data ?? [] });
 }
 
@@ -42,6 +54,7 @@ export async function POST(req: NextRequest) {
   const { data, error } = await a.client.rpc('admin_moderate', { p_candidate_id: parsed.candidateId, p_action: parsed.action });
   if (error) return json({ error: 'UPSTREAM' }, 502);
   const res = data as { ok?: boolean; error?: string } | null;
+  auditLog({ event: 'admin_moderate', ip: a.ip, candidateId: parsed.candidateId, action: parsed.action, ok: res?.ok === true, error: res?.error });
   if (!res?.ok) return json({ error: res?.error ?? 'UPSTREAM' }, res?.error === 'NOT_FOUND' ? 404 : 400);
   return json({ ok: true });
 }

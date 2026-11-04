@@ -2,11 +2,18 @@ import type { PeerMeta, Pose, PresenceApi, PresenceListener, ReactionEmoji, Zone
 import type { Bus, BusMessage } from './bus';
 import { EV, HELLO_MS, PEER_EXPIRY_MS, POSE_HZ_MOVING, POSE_IDLE_MS, REACTION_COOLDOWN_MS, TOPIC_STREET, topicPos } from '../topics';
 import { clampToBounds } from '@/lib/layout';
+import { MAX_PEERS, MIN_POSE_GAP_MS, MIN_REACT_GAP_MS, UidGate, parsePose, parseReaction } from '@/lib/peerInput';
 
 interface Peer {
   meta: PeerMeta | null;
   lastSeen: number;
+  /** the peer's tab is hidden: its timers are throttled (down to 1/min), so it gets a longer expiry */
+  hidden?: boolean;
 }
+
+/** expiry for a peer that announced its tab is hidden (browsers throttle background timers to ~1/min) */
+const HIDDEN_EXPIRY_MS = 150_000;
+const isTabHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
 
 interface PosePayload {
   u: string;
@@ -35,7 +42,8 @@ export class DemoPresence implements PresenceApi {
   private listeners = new Set<PresenceListener>();
   private lastPose = 0;
   private lastReact = -Infinity;
-  private reactSeen = new Map<string, number>();
+  private poseGate = new UidGate(MIN_POSE_GAP_MS);
+  private reactGate = new UidGate(MIN_REACT_GAP_MS);
   private poseN = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
   private unsub: (() => void) | null = null;
@@ -57,6 +65,7 @@ export class DemoPresence implements PresenceApi {
     if (this.opts.timers !== false && !this.timer) {
       this.timer = setInterval(() => this.tick(), HELLO_MS);
       if (typeof window !== 'undefined') window.addEventListener('pagehide', this.onHide);
+      if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisibility);
     }
     this.emitCount();
   }
@@ -64,6 +73,9 @@ export class DemoPresence implements PresenceApi {
   private onHide = () => {
     this.bus.post({ topic: TOPIC_STREET, event: EV.bye, payload: { uid: this.uid } });
   };
+
+  /** announce hidden/visible right away so peers adapt the expiry before our throttled heartbeat slows down */
+  private onVisibility = () => this.hello();
 
   setZones(current: ZoneOrPlaza, neighbor: ZoneOrPlaza | null): void {
     this.current = current;
@@ -109,6 +121,7 @@ export class DemoPresence implements PresenceApi {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     if (typeof window !== 'undefined') window.removeEventListener('pagehide', this.onHide);
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisibility);
     this.unsub?.();
     this.unsub = null;
     this.peers.clear();
@@ -127,7 +140,7 @@ export class DemoPresence implements PresenceApi {
   sweep(now: number): void {
     let changed = false;
     for (const [uid, p] of this.peers) {
-      if (now - p.lastSeen > PEER_EXPIRY_MS) {
+      if (now - p.lastSeen > (p.hidden ? HIDDEN_EXPIRY_MS : PEER_EXPIRY_MS)) {
         this.peers.delete(uid);
         for (const l of this.listeners) l.onLeave(uid);
         changed = true;
@@ -139,10 +152,11 @@ export class DemoPresence implements PresenceApi {
   handle(m: BusMessage): void {
     const now = this.now();
     if (m.topic === TOPIC_STREET && m.event === EV.hello) {
-      const p = m.payload as { uid: string; meta: PeerMeta };
-      if (!p?.uid || p.uid === this.uid) return;
+      const p = m.payload as { uid: string; meta: PeerMeta; hidden?: boolean };
+      if (!p || typeof p.uid !== 'string' || !p.uid || p.uid === this.uid) return;
       const isNew = !this.peers.has(p.uid);
-      this.peers.set(p.uid, { meta: p.meta, lastSeen: now });
+      if (isNew && this.peers.size >= MAX_PEERS) return;
+      this.peers.set(p.uid, { meta: p.meta, lastSeen: now, hidden: p.hidden === true });
       if (isNew) {
         this.hello(); // answer so the newcomer sees us immediately
         this.emitCount();
@@ -161,31 +175,28 @@ export class DemoPresence implements PresenceApi {
     const zones = new Set([topicPos(this.current), this.neighbor ? topicPos(this.neighbor) : '']);
     if (!zones.has(m.topic)) return;
     if (m.event === EV.pose) {
-      const p = m.payload as PosePayload;
-      if (!p?.u || p.u === this.uid) return;
-      const peer = this.peers.get(p.u) ?? { meta: null, lastSeen: now };
-      if (p.n && p.ro && p.av) {
-        peer.meta = { uid: p.u, name: p.n, role: p.ro, company: p.co ?? null, avatar: p.av, isBot: peer.meta?.isBot };
-      }
+      const parsed = parsePose(m.payload, this.uid);
+      if (!parsed) return;
+      const known = this.peers.get(parsed.u);
+      if (!known && this.peers.size >= MAX_PEERS) return;
+      if (!this.poseGate.accept(parsed.u, now)) return;
+      const peer = known ?? { meta: null, lastSeen: now };
+      if (parsed.meta) peer.meta = { ...parsed.meta, isBot: peer.meta?.isBot };
       peer.lastSeen = now;
-      const isNew = !this.peers.has(p.u);
-      this.peers.set(p.u, peer);
-      const c = clampToBounds(p.x, p.z);
-      for (const l of this.listeners) l.onPose(p.u, { x: c.x, z: c.z, ry: p.r, moving: p.m === 1 }, peer.meta, now);
-      if (isNew) this.emitCount();
+      peer.hidden = false; // it is publishing poses, so it is visible
+      this.peers.set(parsed.u, peer);
+      for (const l of this.listeners) l.onPose(parsed.u, parsed.pose, peer.meta, now);
+      if (!known) this.emitCount();
     } else if (m.event === EV.react) {
-      const p = m.payload as { u: string; e: ReactionEmoji; x: number; z: number };
-      if (!p?.u || p.u === this.uid) return;
-      const last = this.reactSeen.get(p.u) ?? -Infinity;
-      if (now - last < 1000) return; // receivers drop > 1/s per uid
-      this.reactSeen.set(p.u, now);
-      for (const l of this.listeners) l.onReaction(p.u, p.e, p.x, p.z);
+      const r = parseReaction(m.payload, this.uid);
+      if (!r || !this.reactGate.accept(r.u, now)) return; // receivers drop > 1/s per uid
+      for (const l of this.listeners) l.onReaction(r.u, r.e, r.x, r.z);
     }
   }
 
   private hello() {
     if (!this.meta) return;
-    this.bus.post({ topic: TOPIC_STREET, event: EV.hello, payload: { uid: this.uid, meta: this.meta, zone: this.current } });
+    this.bus.post({ topic: TOPIC_STREET, event: EV.hello, payload: { uid: this.uid, meta: this.meta, zone: this.current, hidden: isTabHidden() } });
   }
 
   private emitCount() {

@@ -16,8 +16,10 @@ interface WorldState {
   online: number;
   incenseToday: number;
   loaded: boolean;
+  /** call right before fetching the street: structural events arriving until `setAll` are replayed on top of the list */
+  beginLoad: () => void;
   setAll: (list: CandidateCard[], now: number) => void;
-  apply: (e: StreetEvent, now: number) => void;
+  apply: (e: StreetEvent, now: number, replay?: boolean) => void;
   recompute: (now: number) => void;
   setOnline: (n: number) => void;
   setIncense: (n: number) => void;
@@ -41,6 +43,9 @@ function planOf(cands: Record<string, CandidateCard>, now: number): SeatPlan {
 }
 
 let tickerId = 1;
+/** structural events (idempotent) received while a street fetch is in flight */
+let loadBuffer: StreetEvent[] | null = null;
+const STRUCTURAL: ReadonlySet<StreetEvent['type']> = new Set(['candidate_upsert', 'candidate_remove', 'placed']);
 
 export const useWorld = create<WorldState>((set, get) => ({
   candidates: {},
@@ -49,16 +54,24 @@ export const useWorld = create<WorldState>((set, get) => ({
   online: 1,
   incenseToday: 0,
   loaded: false,
+  beginLoad: () => {
+    loadBuffer = [];
+  },
   setAll: (list, now) => {
     const candidates = Object.fromEntries(list.map((c) => [c.id, c]));
     set({ candidates, plan: planOf(candidates, now), loaded: true });
+    const buffered = loadBuffer;
+    loadBuffer = null;
+    // events that arrived while the list was loading are newer than the snapshot: replay them
+    if (buffered) for (const e of buffered) get().apply(e, now, true);
   },
   recompute: (now) => set((s) => ({ plan: planOf(s.candidates, now) })),
   setOnline: (online) => set({ online }),
   setIncense: (incenseToday) => set({ incenseToday }),
-  apply: (e, now) => {
+  apply: (e, now, replay = false) => {
+    if (!replay && loadBuffer && STRUCTURAL.has(e.type)) loadBuffer.push(e);
     const s = get();
-    const line = formatTickerLine(e);
+    const line = replay ? null : formatTickerLine(e);
     const ticker = line ? [...s.ticker, { id: tickerId++, text: line }].slice(-5) : s.ticker;
     const cands = { ...s.candidates };
     let plan = s.plan;
@@ -97,7 +110,8 @@ export const useWorld = create<WorldState>((set, get) => ({
           xuToday: prev?.xuToday ?? 0,
         };
         cands[next.id] = next;
-        if (!prev) plan = appendNewcomer(plan, toRanked(next, now));
+        if (next.status === 'placed') plan = removeCandidate(plan, next.id);
+        else if (!prev || prev.status === 'placed') plan = appendNewcomer(plan, toRanked(next, now)); // new or placed -> sitting again: seat now
         else if (prev.zone !== next.zone) plan = appendNewcomer(removeCandidate(plan, next.id), toRanked(next, now));
         break;
       }

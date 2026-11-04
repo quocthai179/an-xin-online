@@ -63,8 +63,9 @@ export function candidateSharePath(c: Pick<CandidateCard, 'slug' | 'isSample' | 
   return enc ? `${base}?d=${enc}` : base;
 }
 
-export function fortuneSharePath(fortuneId: string, name: string, day: string): string {
-  return `/q/${fortuneId}?n=${encodeURIComponent(name)}&d=${day}`;
+/** `sig` comes from /api/share/sign; without it the server ignores the name (anonymous card). */
+export function fortuneSharePath(fortuneId: string, name: string, day: string, sig?: string | null): string {
+  return `/q/${fortuneId}?n=${encodeURIComponent(name)}&d=${day}${sig ? `&s=${sig}` : ''}`;
 }
 
 export interface PublicFortune {
@@ -86,4 +87,12 @@ export function ogSignFontSize(text: string): number {
   if (n <= 40) return 68;
   if (n <= 60) return 56;
   return 46;
+}
+
+/** Label in the top-right corner of a candidate OG card: only sample/demo/placed cards get one, real signs none. */
+export function ogStamp(c: Pick<PublicCandidate, 'demo' | 'sample' | 'placed'>): string {
+  if (c.demo) return 'Bản demo';
+  if (c.sample) return 'Ứng viên mẫu';
+  if (c.placed) return 'Đã được bao trọn';
+  return '';
 }

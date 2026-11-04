@@ -23,10 +23,14 @@ export const peers = new Map<string, RemotePeer>();
 export const reactionQueue: ReactionFx[] = [];
 
 export const MAX_PENDING_REACTIONS = 40;
+/** hard cap of rendered remote walkers (a flood of forged uids must not grow the map or the draw cost) */
+export const MAX_REMOTE_PEERS = 200;
 
 export function onPeerPose(uid: string, pose: Pose, meta: PeerMeta | null, receivedAt: number): void {
+  if (!Number.isFinite(pose.x) || !Number.isFinite(pose.z)) return;
   let p = peers.get(uid);
   if (!p) {
+    if (peers.size >= MAX_REMOTE_PEERS) return;
     p = { uid, meta, buf: new SnapshotBuffer(), lastSeen: receivedAt, cur: { x: pose.x, z: pose.z, ry: pose.ry, moving: false } };
     peers.set(uid, p);
   }

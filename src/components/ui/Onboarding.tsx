@@ -7,6 +7,7 @@ import { defaultAvatar } from '@/lib/format';
 import { hashString } from '@/lib/hash';
 import { FIELD_LIMITS } from '@/lib/rules';
 import { unlockAudio } from '@/audio/sfx';
+import { CaptchaWidget } from './CaptchaWidget';
 import { useSession } from '@/state/session';
 import { useUi } from '@/state/ui';
 
@@ -121,6 +122,8 @@ export function Onboarding({ initial, onDone }: { initial?: Me['profile']; onDon
       </label>
       {err?.field === 'agree' && <em className="error">{err.text}</em>}
       {err && !['display_name', 'company', 'agree'].includes(err.field ?? '') && <em className="error">{err.text}</em>}
+
+      {!initial && backend?.mode === 'supabase' && <CaptchaWidget />}
 
       <button className="btn primary big" type="submit" disabled={busy || !backend}>
         {busy ? 'Đang vào phố...' : initial ? 'Lưu thay đổi' : 'Vào phố'}

@@ -245,6 +245,9 @@ small { color: var(--ink2); }
   position: fixed; left: 50%; transform: translateX(-50%); bottom: 100px; z-index: 11; margin: 0; padding: 4px 12px; border-radius: 999px; max-width: 92vw;
   background: rgba(42, 26, 10, 0.62); color: #ffe9b8; font-size: 0.78rem; text-align: center; pointer-events: none;
 }
+.scene-shot { position: fixed; right: 10px; bottom: 100px; z-index: 12; background: rgba(255, 250, 240, 0.95); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); }
+.captcha { min-height: 65px; margin: 8px 0; }
+.hr-safety { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; margin: 6px 0; }
 .reaction-bar { position: fixed; right: 10px; bottom: 150px; z-index: 12; display: flex; flex-direction: column; gap: 6px; }
 .react-btn {
   width: 46px; height: 46px; border-radius: 50%; border: 2px solid var(--line); background: rgba(255, 250, 240, 0.95); font-size: 1.4rem; cursor: pointer;

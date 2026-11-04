@@ -93,8 +93,12 @@ export function GiftEffects() {
       if (e.type === 'gift' && e.kind === 'xu') {
         const from = giverPosition(e.giver.id, candId, { x: 0, y: 0, z: 0 });
         const i = ring.current.coin++ % COINS;
-        fxCoins.current.push({ t0: now, dur: reduced ? 0.15 : 0.75, from, to: bowl, idx: [i], seed: i });
-        if (!mine) playCoin(gainDb);
+        const ownThrow = e.giver.id === useSession.getState().me?.profile.id;
+        // our own throw gets a longer, higher arc and the "leng keng" lands with the coin
+        const dur = reduced ? 0.15 : ownThrow ? 0.95 : 0.75;
+        fxCoins.current.push({ t0: now, dur, from, to: bowl, idx: [i], seed: i });
+        if (ownThrow) setTimeout(() => playCoin(-2), dur * 1000);
+        else if (!mine) playCoin(gainDb);
       } else if (e.type === 'gift') {
         // love: a heart floats up from the bowl
         onHeart(bowl.x, bowl.z);

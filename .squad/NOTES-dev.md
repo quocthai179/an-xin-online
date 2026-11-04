@@ -110,3 +110,32 @@ Still open: things that need a real Supabase project or a real device (see "P8-P
 - `inbox:<uid>` is subscribed as soon as the anonymous session exists, before the user has a profile; that is allowed by the policy (it only checks `auth.uid()`).
 - Sample candidates exist in Supabase only after `seed.sql` runs; `/c/<sample-slug>` works either way (shipped seeds as fallback).
 - Reduced-motion and focus trap are covered by e2e; screen-reader behaviour was not tried with a real reader. FPS on real devices is still unmeasured.
+
+## Hardening round (review + security audit follow-ups)
+
+Fixed on the client/server side (DB-engineer parts live in `supabase/**`, `engine.ts`, `rules.ts`, `limits.ts`, `moderation/**`):
+
+- **Review M1**: `Backend.getMe()` now THROWS on a transient failure and returns `null` only for "no profile" (SupabaseBackend). `session.refreshMe` keeps the previous `me` on error;
+  `restore()` returns null on timeout/offline and `useBoot` never overwrites a `me` already filled by the status-driven refresh. `register()` maps a thrown getMe to `NETWORK`.
+- **Review M2 (client)**: `mapCardLight` returns null for `hidden`; `mapStreetEvent` turns a hidden `candidate_upsert` into `candidate_remove` (instead of null) so the street drops it, and a hidden `placed` is ignored.
+  `mapListCard` filters hidden rows out of `list_candidates`. `mapCard` (used by `get_candidate` details, where the owner can read a hidden sign) is unchanged.
+- **Review M3 (bots)**: `bots.ts` reserves `BOT_HRS[0]` for the welcome gift; ticker gifts use the other bots and stop quietly per bot on `LIMIT_DAILY`/`RATE_LIMITED`.
+- **Minor 3 / Sec M3**: `src/lib/peerInput.ts` is the single receiver-side validator for `pos:*` (both `SupabasePresence` and `DemoPresence` use it): finite+clamped coords, emoji allowlist,
+  name/company through `isBlocked`/`hasPii`, role allowlist, avatar sanitised, `MAX_PEERS` 200 (also `MAX_REMOTE_PEERS` in `state/peers.ts`), per-uid gates (80 ms pose, 1 s reaction). `u` itself cannot be authenticated (anyone can claim any uid on the wire, audit I3).
+- **Minor 4**: `world.apply(candidate_upsert)` seats a placed -> sitting candidate immediately. **Nit**: `world.beginLoad()` + `setAll` replay structural events received during a street fetch.
+- **Minor 5/6**: `claimIdentity` runs under the exclusive Web Lock `pxv:identity-claim`; `DemoBackend.read` seeds under the DB lock. Demo `hello` carries `hidden`; hidden peers expire after 150 s instead of 15 s, and a visibilitychange sends an immediate hello.
+- **Minor 7/8/9**: `ogStamp` (demo "Bản demo", sample "Ứng viên mẫu", placed "Đã được bao trọn", real none). Aggregated gift toasts split `xu` / `xu tình thương`. OG cards are rendered fully (`render()` in `ogCards.tsx`) so stream errors reach the route's catch;
+  `ogFonts` does not cache a failed load; fallback card has a short cache.
+- **Sec H1 (client)**: optional Turnstile. `src/lib/captcha.ts` (token broker), `ui/CaptchaWidget.tsx`, `SupabaseBackend` option `captcha.take()`. With CAPTCHA on, `restore()` does not sign in (no stored session -> onboarding), public reads do not wait for the sign-in,
+  and the sign-in happens at `register()` with `signInAnonymously({ options: { captchaToken } })`. UI says the contact unlocks after the candidate accepts the 500k.
+- **Sec M5**: `getPublicCandidate` cached 60 s (`unstable_cache`, misses cached too); OG `Cache-Control: public, s-maxage=3600, stale-while-revalidate=86400`, unknown query keys 308-redirect to the canonical URL (`ogGuard.ts`);
+  `GET /api/street` (cached 15 s) feeds `SupabaseBackend.listCandidates()` with RPC fallback; in-memory per-IP token buckets (`server/rateLimit.ts`) on OG, share-sign and admin.
+- **Sec M6**: `ui/HrSafety.tsx` in the Inbox ("HR chưa xác minh" warning + "Báo cáo HR này"). There is no report-HR RPC yet: it opens a mailto when `NEXT_PUBLIC_REPORT_EMAIL` is set, otherwise tells the user how to report (`TODO(SEC-M6)`).
+- **Sec L2**: nonce CSP in `src/proxy.ts` (Next 16 `proxy`), built by `src/lib/csp.ts`. Because the nonce is per request, **every page is now server-rendered on demand** (`await connection()` in the root layout; the route table shows all pages as dynamic).
+  Trade-off: no static HTML from the CDN; the page shells are tiny and the JS chunks stay immutable/static. `style-src` keeps `'unsafe-inline'` (inline style attributes). Added `base-uri 'none'`, `form-action 'self'`, `object-src 'none'`, HSTS, COOP same-origin.
+  The proxy matcher skips `/api/*`, `_next/static`, `_next/image`, `/fonts`.
+- **Sec L3**: admin route needs `ADMIN_KEY` >= 32 chars (503 otherwise), per-IP failure throttle (5 failures then 429, refills 1/min), JSON audit log lines `scope: admin_audit`.
+- **Sec L6**: `/q/<id>?n=&d=&s=`: the name is honoured only with an HMAC (`SHARE_SECRET`) issued by `GET /api/share/sign` (which also runs the moderation check); otherwise "Một người qua đường".
+- **Viral polish**: own coin throws get a longer arc and the "leng keng" lands with the coin; "Chụp ảnh phố" button (renders one frame on demand, no `preserveDrawingBuffer`, watermark `phoxinviec`). DOM name tags are not part of the PNG.
+
+Not done / notes: hidden candidates in `get_candidate` details still map to `sitting` for the owner view (type has no `hidden`); HR-promotion CAPTCHA (only anon sign-in is protected); IP-keyed limits behind Vercel rely on `x-vercel-forwarded-for`/`x-real-ip`.

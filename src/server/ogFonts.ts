@@ -30,7 +30,10 @@ export function loadOgFonts(): Promise<OgFont[]> {
     const fonts: OgFont[] = [];
     if (hand) fonts.push({ name: 'Patrick Hand', data: hand, weight: 400, style: 'normal' });
     if (bold) fonts.push({ name: 'Be Vietnam Pro', data: bold, weight: 700, style: 'normal' });
-    if (fonts.length < 2) console.warn('[og] vendored fonts missing, Vietnamese diacritics may degrade');
+    if (fonts.length < 2) {
+      console.warn('[og] vendored fonts missing, Vietnamese diacritics may degrade');
+      cached = null; // do not cache a failed load: retry on the next request
+    }
     return fonts;
   })();
   return cached;

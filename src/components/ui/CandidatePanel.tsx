@@ -196,7 +196,7 @@ export function CandidatePanel({ id }: { id: string }) {
         {contact ? (
           href ? <a href={href} target="_blank" rel="noopener noreferrer nofollow ugc">{contact.value}</a> : <span>{contact.value}</span>
         ) : (
-          <span className="dim">Thả 500k để mở liên hệ</span>
+          <span className="dim">Thả 500k để mở liên hệ. Liên hệ chỉ mở sau khi ứng viên nhận lời 500k của bạn.</span>
         )}
       </div>
 

@@ -85,8 +85,12 @@ export class DemoBackend implements Backend {
     });
   }
 
-  private read<T>(fn: (db: DemoDb, now: number) => T): T {
-    return fn(this.load(), this.deps.now());
+  /** Reads never write, except the very first one: seeding happens under the DB lock so two fresh tabs cannot clobber each other. */
+  private async read<T>(fn: (db: DemoDb, now: number) => T): Promise<T> {
+    const existing = loadRaw(this.deps.store);
+    if (existing) return fn(existing, this.deps.now());
+    const db = await this.deps.locks.request(DB_LOCK, () => this.load());
+    return fn(db, this.deps.now());
   }
 
   /** Used by demo bots: perform a gift as a bot HR. */

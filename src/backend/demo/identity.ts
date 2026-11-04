@@ -6,9 +6,15 @@ export const SESSION_UID_KEY = 'pxv:uid';
 export interface IdentityLocks {
   /** Try to take a lock held for the lifetime of the tab. Resolves false if someone else holds it. */
   tryHold(name: string): Promise<boolean>;
+  /** Run `fn` while holding a short-lived exclusive lock (serialises identity claims across tabs). Optional: tests may omit it. */
+  exclusive?<T>(name: string, fn: () => Promise<T>): Promise<T>;
 }
 
 export class WebIdentityLocks implements IdentityLocks {
+  exclusive<T>(name: string, fn: () => Promise<T>): Promise<T> {
+    return navigator.locks.request(name, fn) as Promise<T>;
+  }
+
   tryHold(name: string): Promise<boolean> {
     return new Promise((resolve) => {
       void navigator.locks.request(name, { ifAvailable: true }, (lock) => {
@@ -25,6 +31,12 @@ export class WebIdentityLocks implements IdentityLocks {
 
 export class MemoryIdentityLocks implements IdentityLocks {
   private held = new Set<string>();
+  private chain: Promise<unknown> = Promise.resolve();
+  exclusive<T>(_name: string, fn: () => Promise<T>): Promise<T> {
+    const run = this.chain.then(fn, fn);
+    this.chain = run.catch(() => undefined);
+    return run;
+  }
   async tryHold(name: string) {
     if (this.held.has(name)) return false;
     this.held.add(name);
@@ -54,6 +66,12 @@ export interface IdentityDeps {
  * `as` forces a deterministic id `demo-<as>` (tests).
  */
 export async function claimIdentity(deps: IdentityDeps, as?: string | null): Promise<string> {
+  // two tabs opened together must not read the same stored-user list (lost update / same user claimed twice): serialise the claim
+  const { locks } = deps;
+  return locks.exclusive ? locks.exclusive('pxv:identity-claim', () => claimLocked(deps, as)) : claimLocked(deps, as);
+}
+
+async function claimLocked(deps: IdentityDeps, as?: string | null): Promise<string> {
   const { local, session, locks } = deps;
   const users = readUsers(local);
   const remember = (id: string) => {

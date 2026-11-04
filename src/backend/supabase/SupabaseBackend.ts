@@ -5,7 +5,7 @@ import type {
 } from '../types';
 import { EV, TOPIC_STREET, topicInbox } from '../topics';
 import {
-  candidateInputToRpc, isNetworkFailure, mapCard, mapContact, mapDetail, mapInvitation, mapMe, mapNotification, mapOffer,
+  candidateInputToRpc, isNetworkFailure, mapListCard, mapContact, mapDetail, mapInvitation, mapMe, mapNotification, mapOffer,
   mapStreetEvent, toResult, type RpcResponse,
 } from './mappers';
 import { SupabasePresence } from './presence';
@@ -19,6 +19,10 @@ export interface SupabaseBackendOptions {
   autoRetry?: boolean;
   restoreTimeoutMs?: number;
   presenceTimers?: boolean;
+  /** cached street snapshot (`/api/street`); unset = always use the RPC */
+  snapshotUrl?: string;
+  /** Turnstile: resolves a single-use token for the anonymous sign-in (set only when NEXT_PUBLIC_TURNSTILE_SITE_KEY is configured) */
+  captcha?: { take: () => Promise<string> };
   isVisible?: () => boolean;
   now?: () => number;
 }
@@ -75,7 +79,8 @@ export class SupabaseBackend implements Backend {
         const { data } = await this.client.auth.getSession();
         let user = data.session?.user ?? null;
         if (!user) {
-          const r = await this.client.auth.signInAnonymously();
+          const captchaToken = this.opts.captcha ? await this.opts.captcha.take() : undefined;
+          const r = await this.client.auth.signInAnonymously(captchaToken ? { options: { captchaToken } } : undefined);
           if (r.error || !r.data.user) throw r.error ?? new Error('anonymous sign-in failed');
           user = r.data.user;
         }
@@ -152,7 +157,8 @@ export class SupabaseBackend implements Backend {
   // ----- rpc plumbing -----
   private async call(fn: string, args?: Record<string, unknown>, opts: { auth?: boolean } = {}): Promise<RpcResponse> {
     const needAuth = opts.auth !== false;
-    const uid = await this.ensureSession();
+    // with CAPTCHA on, public reads must not block on the sign-in (it waits for the widget)
+    const uid = needAuth || !this.opts.captcha ? await this.ensureSession() : this.uid;
     if (!uid && needAuth) return { data: null, error: { message: 'offline' }, status: 0 };
     try {
       const res = (await this.client.rpc(fn, args)) as RpcResponse;
@@ -176,6 +182,11 @@ export class SupabaseBackend implements Backend {
 
   // ----- identity -----
   async restore(): Promise<Me | null> {
+    if (this.opts.captcha) {
+      // no stored session: the sign-in needs a solved CAPTCHA, so wait for the onboarding instead of timing out into "offline"
+      const { data } = await this.client.auth.getSession();
+      if (!data.session?.user) return null;
+    }
     const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), this.opts.restoreTimeoutMs ?? RESTORE_TIMEOUT_MS));
     const uid = await Promise.race([this.ensureSession(), timeout]);
     if (!uid) {
@@ -183,7 +194,11 @@ export class SupabaseBackend implements Backend {
       this.scheduleRetry();
       return null;
     }
-    return this.getMe();
+    try {
+      return await this.getMe();
+    } catch {
+      return null; // transient failure: the status listener refetches `me` when the connection is back
+    }
   }
 
   async register(input: { displayName: string; role: Role; company?: string; avatar: AvatarSpec }): Promise<Result<Me>> {
@@ -193,20 +208,43 @@ export class SupabaseBackend implements Backend {
       () => undefined,
     );
     if (!r.ok) return r;
-    const me = await this.getMe();
-    return me ? { ok: true, data: me } : { ok: false, error: 'NETWORK' };
+    try {
+      const me = await this.getMe();
+      return me ? { ok: true, data: me } : { ok: false, error: 'NETWORK' };
+    } catch {
+      return { ok: false, error: 'NETWORK' };
+    }
   }
 
+  /** Resolves null only when the account has no profile; THROWS on a transient failure so callers keep their previous `me`. */
   async getMe(): Promise<Me | null> {
     const res = await this.call('get_me');
-    return res.error ? null : mapMe(res.data);
+    if (res.error) throw new Error('get_me failed');
+    return mapMe(res.data);
   }
 
   // ----- candidates -----
   async listCandidates(): Promise<CandidateCard[]> {
+    const snap = await this.fetchSnapshot();
+    if (snap) return snap;
     const res = await this.call('list_candidates', undefined, { auth: false });
     if (res.error || !Array.isArray(res.data)) return [];
-    return res.data.map(mapCard);
+    return res.data.map(mapListCard).filter((c): c is CandidateCard => c !== null);
+  }
+
+  /** M5: the CDN-cached snapshot first; null (any failure) means "use the RPC". */
+  private async fetchSnapshot(): Promise<CandidateCard[] | null> {
+    const url = this.opts.snapshotUrl;
+    if (!url || typeof fetch !== 'function') return null;
+    try {
+      const r = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!r.ok) return null;
+      const rows: unknown = await r.json();
+      if (!Array.isArray(rows)) return null;
+      return rows.map(mapListCard).filter((c): c is CandidateCard => c !== null);
+    } catch {
+      return null;
+    }
   }
 
   async getCandidate(idOrSlug: string): Promise<CandidateDetail | null> {
@@ -325,13 +363,13 @@ export class SupabaseBackend implements Backend {
   // ----- realtime -----
   onStreetEvent(cb: (e: StreetEvent) => void): () => void {
     this.streetListeners.add(cb);
-    void this.ensureSession(); // make sure the channels exist even before the first RPC
+    if (!this.opts.captcha || this.uid) void this.ensureSession(); // make sure the channels exist even before the first RPC
     return () => this.streetListeners.delete(cb);
   }
 
   onNotification(cb: (n: AppNotification) => void): () => void {
     this.notifListeners.add(cb);
-    void this.ensureSession();
+    if (!this.opts.captcha || this.uid) void this.ensureSession();
     return () => this.notifListeners.delete(cb);
   }
 

@@ -10,7 +10,9 @@ export type ErrorCode =
   | 'LIMIT_DAILY' | 'LIMIT_PER_CANDIDATE_DAY' | 'INVITE_ALREADY_OPEN' | 'INVITE_COOLDOWN' | 'CANDIDATE_FULL'
   | 'NEED_ACCEPTED_INVITE' | 'OFFER_ALREADY_OPEN' | 'HR_OFFER_LIMIT' | 'EXPIRED' | 'NOT_PENDING'
   | 'ALREADY_DONE' | 'ALREADY_REPORTED' | 'CONTACT_LOCKED' | 'VALIDATION' | 'BLOCKED_CONTENT' | 'PII_NOT_ALLOWED'
-  | 'NAME_CHANGE_COOLDOWN' | 'ZONE_CHANGE_COOLDOWN' | 'NETWORK';
+  | 'NAME_CHANGE_COOLDOWN' | 'ZONE_CHANGE_COOLDOWN' | 'NETWORK'
+  // 0002_hardening: moderation lock (sit again refused), banned user, HR account too new for a 500k
+  | 'MODERATION_LOCKED' | 'BANNED' | 'TOO_NEW';
 
 export type Result<T> =
   | { ok: true; data: T }
@@ -180,16 +182,21 @@ export interface Actor {
   role: Role;
   company: string | null;
 }
+/**
+ * Candidate in gift / invite / offer street events. When the candidate hides from the ticker the server sends the
+ * anonymous name only (no id, no zone; sec audit L1): clients then get `id: ''` and `zone: null`.
+ */
 export interface CandRef {
   id: string;
   name: string;
-  zone: ZoneId;
+  zone: ZoneId | null;
 }
 
 export type StreetEvent =
   | { type: 'gift'; id: string; kind: GiftKind; giver: Actor; candidate: CandRef; at: string }
   | { type: 'invite' | 'offer'; id: string; giver: Actor; candidate: CandRef; at: string }
-  | { type: 'placed'; candidate: CandidateCard; company: string | null; at: string }
+  // name: ticker-safe name ('một bạn ẩn danh' when the candidate hides from the ticker); optional for old payloads
+  | { type: 'placed'; candidate: CandidateCard; company: string | null; name?: string; at: string }
   | { type: 'incense'; name: string; at: string }
   | { type: 'candidate_upsert'; candidate: Omit<CandidateCard, 'decayed' | 'xuWeek' | 'xuToday'>; at: string }
   | { type: 'candidate_remove'; id: string; at: string };
@@ -235,6 +242,7 @@ export interface Backend {
   readonly mode: Mode;
   restore(): Promise<Me | null>;
   register(input: { displayName: string; role: Role; company?: string; avatar: AvatarSpec }): Promise<Result<Me>>;
+  /** null = no profile yet. Remote backends throw on a transient failure (callers keep their previous `me`). */
   getMe(): Promise<Me | null>;
   listCandidates(): Promise<CandidateCard[]>;
   getCandidate(idOrSlug: string): Promise<CandidateDetail | null>;

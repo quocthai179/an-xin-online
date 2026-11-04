@@ -21,3 +21,11 @@ export function parseModerateBody(body: unknown): { candidateId: string; action:
   if (typeof action !== 'string' || !(ADMIN_ACTIONS as readonly string[]).includes(action)) return null;
   return { candidateId, action: action as AdminAction };
 }
+
+/** ADMIN_KEY shorter than this is rejected with 503 (a guessable key on an internet-facing route is worse than no route). */
+export const ADMIN_KEY_MIN_LENGTH = 32;
+
+/** One structured JSON line per admin action / failure (picked up by the platform log drain). Never logs the key. */
+export function auditLog(entry: Record<string, unknown>): void {
+  console.info(JSON.stringify({ scope: 'admin_audit', at: new Date().toISOString(), ...entry }));
+}

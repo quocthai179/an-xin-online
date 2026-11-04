@@ -2,6 +2,7 @@ import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import type { PeerMeta, Pose, PresenceApi, PresenceListener, ReactionEmoji, ZoneOrPlaza } from '../types';
 import { EV, PEER_EXPIRY_MS, POSE_HZ_MOVING, POSE_IDLE_MS, REACTION_COOLDOWN_MS, topicPos } from '../topics';
 import { clampToBounds } from '@/lib/layout';
+import { MAX_PEERS, MIN_POSE_GAP_MS, MIN_REACT_GAP_MS, UidGate, parsePose, parseReaction } from '@/lib/peerInput';
 
 interface Peer {
   meta: PeerMeta | null;
@@ -44,7 +45,8 @@ export class SupabasePresence implements PresenceApi {
   private pos = new Map<string, RealtimeChannel>();
   private peers = new Map<string, Peer>();
   private listeners = new Set<PresenceListener>();
-  private reactSeen = new Map<string, number>();
+  private poseGate = new UidGate(MIN_POSE_GAP_MS);
+  private reactGate = new UidGate(MIN_REACT_GAP_MS);
   private lastPose = 0;
   private lastReact = -Infinity;
   private poseN = 0;
@@ -157,6 +159,8 @@ export class SupabasePresence implements PresenceApi {
     for (const ch of this.pos.values()) void this.client.removeChannel(ch);
     this.pos.clear();
     this.peers.clear();
+    this.poseGate.clear();
+    this.reactGate.clear();
     if (this.street && this.tracked) {
       this.tracked = false;
       try {
@@ -186,8 +190,8 @@ export class SupabasePresence implements PresenceApi {
     for (const topic of want) {
       if (this.pos.has(topic)) continue;
       const ch = this.client.channel(topic, { config: { private: true, broadcast: { self: false } } });
-      ch.on('broadcast', { event: EV.pose }, (m) => this.onPose(m.payload as PosePayload));
-      ch.on('broadcast', { event: EV.react }, (m) => this.onReact(m.payload as { u: string; e: ReactionEmoji; x: number; z: number }));
+      ch.on('broadcast', { event: EV.pose }, (m) => this.onPose(m.payload));
+      ch.on('broadcast', { event: EV.react }, (m) => this.onReact(m.payload));
       ch.subscribe();
       this.pos.set(topic, ch);
     }
@@ -202,27 +206,25 @@ export class SupabasePresence implements PresenceApi {
     }
   }
 
-  /** Receiver side: validate, clamp, remember meta, notify. Exposed for tests. */
-  onPose(p: PosePayload): void {
-    if (!p || typeof p.u !== 'string' || p.u === this.getUid()) return;
-    if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) return;
+  /** Receiver side: validate, clamp, rate-limit, cap the peer count, moderate the display meta. Exposed for tests. */
+  onPose(payload: unknown): void {
+    const parsed = parsePose(payload, this.getUid());
+    if (!parsed) return;
     const now = this.now();
-    const peer = this.peers.get(p.u) ?? { meta: null, lastSeen: now };
-    if (p.n && p.ro && p.av) {
-      peer.meta = { uid: p.u, name: String(p.n).slice(0, 24), role: p.ro, company: p.co ?? null, avatar: p.av };
-    }
+    let peer = this.peers.get(parsed.u);
+    if (!peer && this.peers.size >= MAX_PEERS) return;
+    if (!this.poseGate.accept(parsed.u, now)) return;
+    if (!peer) peer = { meta: null, lastSeen: now };
+    if (parsed.meta) peer.meta = parsed.meta;
     peer.lastSeen = now;
-    this.peers.set(p.u, peer);
-    const c = clampToBounds(p.x, p.z);
-    for (const l of this.listeners) l.onPose(p.u, { x: c.x, z: c.z, ry: Number(p.r) || 0, moving: p.m === 1 }, peer.meta, now);
+    this.peers.set(parsed.u, peer);
+    for (const l of this.listeners) l.onPose(parsed.u, parsed.pose, peer.meta, now);
   }
 
-  onReact(p: { u: string; e: ReactionEmoji; x: number; z: number }): void {
-    if (!p || typeof p.u !== 'string' || p.u === this.getUid()) return;
-    const now = this.now();
-    if (now - (this.reactSeen.get(p.u) ?? -Infinity) < 1000) return; // receivers drop > 1/s per uid
-    this.reactSeen.set(p.u, now);
-    for (const l of this.listeners) l.onReaction(p.u, p.e, p.x, p.z);
+  onReact(payload: unknown): void {
+    const r = parseReaction(payload, this.getUid());
+    if (!r || !this.reactGate.accept(r.u, this.now())) return; // receivers drop > 1/s per uid
+    for (const l of this.listeners) l.onReaction(r.u, r.e, r.x, r.z);
   }
 
   dispose(): void {

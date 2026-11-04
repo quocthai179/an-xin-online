@@ -26,6 +26,10 @@ export const useSession = create<SessionState>((set, get) => ({
   refreshMe: async () => {
     const b = get().backend;
     if (!b) return;
-    set({ me: await b.getMe() });
+    try {
+      set({ me: await b.getMe() });
+    } catch {
+      // transient failure: keep the previous `me` (never kick a signed-in user back to onboarding)
+    }
   },
 }));

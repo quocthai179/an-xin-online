@@ -176,7 +176,7 @@ export function CandidateForm() {
 
         <div className="grid2">
           <label className="field">
-            <span>Liên hệ (chỉ HR đã thả 500k mới thấy)</span>
+            <span>Liên hệ (chỉ HR có lời 500k mà bạn đã nhận lời mới thấy)</span>
             <select value={ckind} onChange={(e) => setCkind(e.target.value as typeof ckind)}>
               <option value="email">Email</option>
               <option value="url">Link (LinkedIn, GitHub, Zalo...)</option>

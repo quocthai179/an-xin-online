@@ -2,11 +2,14 @@
 // Supabase mode: anonymous public RPC `get_candidate` (anon key only, no session). Demo mode, or when Supabase is
 // unreachable / does not know the slug: sample candidates from src/lib/seed.ts and, in demo mode only, the `?d=` payload.
 import { createClient } from '@supabase/supabase-js';
+import { unstable_cache } from 'next/cache';
 import { getBackendMode } from '@/backend/mode';
 import { resolvePublicCandidate, SLUG_RE, type PublicCandidate } from '@/lib/shareData';
 import type { ZoneId } from '@/lib/rules';
 
 const FETCH_TIMEOUT_MS = 4_000;
+/** M5: a viral sign must not turn every visit/crawl into an RPC; misses and failures are cached too (negative cache) */
+const CACHE_SECONDS = 60;
 const HIDDEN_SIGN = 'Tấm biển này đang được kiểm duyệt';
 
 type Row = {
@@ -56,10 +59,20 @@ async function fromSupabase(slug: string): Promise<{ found: PublicCandidate | nu
   }
 }
 
+const cachedFromSupabase = unstable_cache(fromSupabase, ['public-candidate-v1'], { revalidate: CACHE_SECONDS });
+
+async function lookup(slug: string): Promise<{ found: PublicCandidate | null }> {
+  try {
+    return await cachedFromSupabase(slug);
+  } catch {
+    return fromSupabase(slug); // outside a Next request scope (tests, scripts): no data cache available
+  }
+}
+
 export async function getPublicCandidate(slug: string, d: string | null | undefined, nowMs: number): Promise<PublicCandidate | null> {
   if (!SLUG_RE.test(slug)) return null;
   if (getBackendMode() !== 'supabase') return resolvePublicCandidate(slug, d, nowMs);
-  const { found } = await fromSupabase(slug);
+  const { found } = await lookup(slug);
   if (found) return found;
   // unknown/hidden/unreachable: only the shipped samples can still be shown; `d` is ignored in Supabase mode
   return resolvePublicCandidate(slug, null, nowMs);

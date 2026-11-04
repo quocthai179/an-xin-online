@@ -26,7 +26,9 @@ export function useBoot(): void {
         useSession.getState().setOffline(st === 'offline');
         if (st === 'online') void useSession.getState().refreshMe();
       });
-      useSession.getState().setMe(await backend.restore());
+      const restored = await backend.restore();
+      // a status-driven refreshMe may already have filled `me` while restore() was timing out: never overwrite it with null
+      if (restored || !useSession.getState().me) useSession.getState().setMe(restored);
       useSession.getState().setReady();
     })();
     return () => {
@@ -46,6 +48,7 @@ export function useStreetSync(): void {
     if (!backend) return;
     let alive = true;
     const load = async () => {
+      useWorld.getState().beginLoad();
       const list = await backend.listCandidates();
       if (alive) useWorld.getState().setAll(list, Date.now());
       const t = await backend.getTempleStats();
@@ -117,7 +120,8 @@ export function useStreetSync(): void {
       const v = notifView(n);
       const ui = useUi.getState();
       if (act.kind === 'aggregate') {
-        ui.toast({ key: 'agg-gift', tone: 'coin', text: `+${act.count} xu vừa rơi vào nón của bạn! 🪙` });
+        const parts = [act.xu > 0 ? `+${act.xu} xu` : '', act.love > 0 ? `+${act.love} xu tình thương` : ''].filter(Boolean);
+        ui.toast({ key: 'agg-gift', tone: act.xu > 0 ? 'coin' : 'love', text: `${parts.join(' và ')} vừa rơi vào nón của bạn! ${act.xu > 0 ? '🪙' : '💛'}` });
       } else {
         const tone = v.sound === 'offer' ? 'offer' : v.sound === 'note' ? 'note' : v.sound === 'love' ? 'love' : v.sound === 'coin' ? 'coin' : 'info';
         ui.toast({

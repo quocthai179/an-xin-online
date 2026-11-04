@@ -74,8 +74,17 @@ export function mapProfile(p: Json): Profile {
   };
 }
 
-/** `private.card_json` (also the payload of candidate_upsert / placed broadcasts). */
-export function mapCardLight(c: Json): Omit<CandidateCard, 'decayed' | 'xuWeek' | 'xuToday'> {
+type CardLight = Omit<CandidateCard, 'decayed' | 'xuWeek' | 'xuToday'>;
+
+/**
+ * `private.card_json` (also the payload of candidate_upsert / placed broadcasts).
+ * Returns null for a hidden candidate: it must never appear on the street (a hidden row is never mapped to `sitting`).
+ */
+export function mapCardLight(c: Json): CardLight | null {
+  return c.status === 'hidden' ? null : cardFields(c);
+}
+
+function cardFields(c: Json): CardLight {
   return {
     id: str(c.id),
     slug: str(c.slug),
@@ -98,10 +107,15 @@ export function mapCardLight(c: Json): Omit<CandidateCard, 'decayed' | 'xuWeek' 
   };
 }
 
-/** Row of `list_candidates` (card + decayed sums). */
+/** Row of `list_candidates` (card + decayed sums). Null for a hidden candidate. */
+export function mapListCard(c: Json): CandidateCard | null {
+  return c.status === 'hidden' ? null : mapCard(c);
+}
+
+/** Card + decayed sums without the hidden filter (used by `get_candidate` details, where the owner can see a hidden sign). */
 export function mapCard(c: Json): CandidateCard {
   return {
-    ...mapCardLight(c),
+    ...cardFields(c),
     decayed: { hr: num(c.hr_decayed), love: num(c.love_decayed), invites: num(c.invite_decayed), accepted: num(c.accepted_decayed) },
     xuWeek: num(c.xu_week),
     xuToday: num(c.xu_today),
@@ -233,17 +247,23 @@ export function mapStreetEvent(event: string, p: unknown): StreetEvent | null {
       case 'invite':
       case 'offer':
         return { type: event, id: str(p.id), giver: actor(p.giver), candidate: candRef(p.candidate), at };
-      case 'placed':
+      case 'placed': {
+        const cand = mapCardLight(p.candidate);
+        if (!cand) return null;
         return {
           type: 'placed',
-          candidate: { ...mapCardLight(p.candidate), decayed: { hr: 0, love: 0, invites: 0, accepted: 0 }, xuWeek: 0, xuToday: 0 },
+          candidate: { ...cand, decayed: { hr: 0, love: 0, invites: 0, accepted: 0 }, xuWeek: 0, xuToday: 0 },
           company: strOrNull(p.company),
           at,
         };
+      }
       case 'incense':
         return { type: 'incense', name: str(p.name), at };
-      case 'candidate_upsert':
-        return { type: 'candidate_upsert', candidate: mapCardLight(p.candidate), at };
+      case 'candidate_upsert': {
+        const cand = mapCardLight(p.candidate);
+        // a hidden candidate is removed from every street, never re-seated
+        return cand ? { type: 'candidate_upsert', candidate: cand, at } : { type: 'candidate_remove', id: str(p.candidate?.id), at };
+      }
       case 'candidate_remove':
         return { type: 'candidate_remove', id: str(p.id), at };
       default:

@@ -3,10 +3,11 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { FORTUNE_DISCLAIMER, TIER_LABELS } from '@/lib/fortune';
 import { resolvePublicFortune } from '@/lib/shareData';
+import { verifiedShareName } from '@/server/shareSign';
 
 type Props = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ n?: string | string[]; d?: string | string[] }>;
+  searchParams: Promise<{ n?: string | string[]; d?: string | string[]; s?: string | string[] }>;
 };
 
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
@@ -14,16 +15,17 @@ const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v
 async function load(p: Props) {
   const { id } = await p.params;
   const sp = await p.searchParams;
-  const n = first(sp.n);
   const d = first(sp.d);
-  return { id, n, d, q: resolvePublicFortune(id, n, d, Date.now()) };
+  // L6: only a name carrying a valid HMAC is shown; otherwise the anonymous name
+  const n = verifiedShareName(id, first(sp.n), d, first(sp.s));
+  return { id, n, d, sig: n ? first(sp.s) : undefined, q: resolvePublicFortune(id, n, d, Date.now()) };
 }
 
 export async function generateMetadata(p: Props): Promise<Metadata> {
-  const { id, q } = await load(p);
+  const { id, q, sig } = await load(p);
   if (!q) return { title: 'Quẻ không tồn tại | Phố Xin Việc 3D', robots: { index: false } };
   const title = `${q.name} xin được ${q.fortune.name} (${TIER_LABELS[q.fortune.tier]})`;
-  const image = `/api/og/q/${id}?n=${encodeURIComponent(q.name)}&d=${q.day}`;
+  const image = `/api/og/q/${id}?d=${q.day}${sig ? `&n=${encodeURIComponent(q.name)}&s=${sig}` : ''}`;
   return {
     title: `${title} | Phố Xin Việc 3D`,
     description: q.fortune.verdict,

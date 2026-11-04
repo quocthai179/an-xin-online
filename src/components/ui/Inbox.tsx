@@ -11,6 +11,7 @@ import { useNow } from '@/hooks/useNow';
 import { useSession } from '@/state/session';
 import { useUi } from '@/state/ui';
 import { useWorld } from '@/state/world';
+import { HrSafety } from './HrSafety';
 import { Modal } from './Modal';
 
 const STATUS_LABEL = { pending: 'Chờ phản hồi', accepted: 'Đã nhận lời', declined: 'Từ chối', expired: 'Hết hạn', closed: 'Ứng viên đã nhận việc khác' } as const;
@@ -86,9 +87,10 @@ export function Inbox() {
             const st = effectiveStatus(o, now);
             return (
               <article key={o.id} className="card item">
-                <h4>🎉 Offer từ {o.hrName} @ {o.hrCompany || '—'} <span className={`status ${st}`}>{STATUS_LABEL[st]}</span></h4>
+                <h4>🎉 Offer từ {o.hrName} @ {o.hrCompany || '—'} <span className="badge">Chưa xác minh</span> <span className={`status ${st}`}>{STATUS_LABEL[st]}</span></h4>
                 <p><strong>{o.position}</strong> · {o.package}</p>
                 {o.message && <p className="quote">{o.message}</p>}
+                <HrSafety item={o} />
                 {st === 'pending' && (
                   <div className="actions">
                     <label className="check">
@@ -109,6 +111,7 @@ export function Inbox() {
                 <h4>💸 500k từ {i.hrName} @ {i.hrCompany || '—'} <span className="badge">Chưa xác minh</span> <span className={`status ${st}`}>{STATUS_LABEL[st]}</span></h4>
                 <p className="quote">{i.message}</p>
                 <p className="dim">Liên hệ HR: {i.hrContact} · {relativeTime(i.createdAt, now)}</p>
+                <HrSafety item={i} />
                 {st === 'pending' && (
                   <div className="actions">
                     <input

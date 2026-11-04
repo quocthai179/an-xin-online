@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Fortune } from '@/lib/fortune';
 import { FORTUNE_DISCLAIMER, selectFortune, TIER_LABELS } from '@/lib/fortune';
 import { errorMessage } from '@/lib/messages';
@@ -14,6 +14,20 @@ import { ShareSheet } from './ShareSheet';
 
 function FortuneCard({ f, day, name }: { f: Fortune; day: string; name: string }) {
   const toast = useUi((s) => s.toast);
+  // L6: the server signs the (moderated) name so the shared page/OG card may show it; unsigned links render anonymously
+  const key = `${f.id}|${name}|${day}`;
+  const [signed, setSigned] = useState<{ key: string; s: string | null } | null>(null);
+  const sig = signed?.key === key ? signed.s : null;
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/share/sign?id=${encodeURIComponent(f.id)}&n=${encodeURIComponent(name)}&d=${day}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { s?: string | null } | null) => alive && setSigned({ key, s: j?.s ?? null }))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [key, f.id, name, day]);
   const text = `Quẻ ${TIER_LABELS[f.tier]} · ${f.name}\n${f.verdict}\nLời khuyên: ${f.advice}\n(${name}, ${day}) · ${FORTUNE_DISCLAIMER} · Phố Xin Việc 3D`;
   const share = async () => {
     if (navigator.share) {
@@ -37,8 +51,8 @@ function FortuneCard({ f, day, name }: { f: Fortune; day: string; name: string }
       <p className="dim">{FORTUNE_DISCLAIMER}</p>
       <button className="btn small" onClick={share}>Chép nội dung quẻ</button>
       <ShareSheet
-        path={fortuneSharePath(f.id, name, day)}
-        imagePath={`/api/og/q/${f.id}?n=${encodeURIComponent(name)}&d=${day}`}
+        path={fortuneSharePath(f.id, name, day, sig)}
+        imagePath={`/api/og/q/${f.id}?d=${day}${sig ? `&n=${encodeURIComponent(name)}&s=${sig}` : ''}`}
         title={`Quẻ ${f.name}`}
         text={`${name} xin được ${f.name} ở Phố Xin Việc 3D`}
         label="Chia sẻ quẻ"

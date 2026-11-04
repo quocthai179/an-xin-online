@@ -7,6 +7,8 @@ import { useIsMobile } from '@/hooks/useIsMobile';
 import { input } from '@/state/input';
 import { peers } from '@/state/peers';
 import { daylight } from '@/scene-lib/daylight';
+import { registerScreenshot, takeScreenshot } from '@/scene-lib/screenshot';
+import { useUi } from '@/state/ui';
 import { Joystick } from '../ui/Joystick';
 import { ReactionBar } from '../ui/ReactionBar';
 import { ZoneNav } from '../ui/ZoneNav';
@@ -47,7 +49,21 @@ function DebugStats() {
   return null;
 }
 
+/** Lets the DOM button grab a frame: render once on demand, so the canvas needs no preserveDrawingBuffer. */
+function ScreenshotBridge() {
+  const { gl, scene, camera } = useThree();
+  useEffect(() => {
+    registerScreenshot(() => {
+      gl.render(scene, camera);
+      return gl.domElement;
+    });
+    return () => registerScreenshot(null);
+  }, [gl, scene, camera]);
+  return null;
+}
+
 export default function Scene() {
+  const toast = useUi((s) => s.toast);
   const mobile = useIsMobile();
   const [degraded, setDegraded] = useState(false);
   const [debug] = useState(() => new URLSearchParams(window.location.search).get('debug') === '1');
@@ -85,9 +101,22 @@ export default function Scene() {
         <Reactions3D />
         <PointerController />
         <TempleTrigger />
+        <ScreenshotBridge />
         {debug && <DebugStats />}
       </Canvas>
       {debug && <div id="pxv-debug" className="debug-stats" />}
+      <button
+        type="button"
+        className="btn small scene-shot"
+        onClick={async () => {
+          const ok = await takeScreenshot();
+          toast(ok ? { tone: 'info', text: 'Đã lưu ảnh phố. Đăng lên khoe nhé!' } : { tone: 'error', text: 'Chưa chụp được ảnh, thử lại nhé.' });
+        }}
+        aria-label="Chụp ảnh phố"
+        title="Chụp ảnh phố"
+      >
+        📸 Chụp ảnh phố
+      </button>
       <ZoneNav />
       <ReactionBar />
       {mobile && <Joystick />}

@@ -38,7 +38,7 @@ export function InviteForm({ id }: { id: string }) {
       return;
     }
     playNote();
-    toast({ tone: 'note', text: `Tờ 500k đã rơi vào nón của ${name}. Liên hệ của bạn ấy đã được mở khóa.` });
+    toast({ tone: 'note', text: `Tờ 500k đã rơi vào nón của ${name}. Liên hệ sẽ mở khi bạn ấy gật đầu.` });
     await refreshMe();
     setPanel({ kind: 'candidate', id });
   };
@@ -49,6 +49,7 @@ export function InviteForm({ id }: { id: string }) {
         <p className="dim">
           Còn {r.perDay - (me?.quota.inviteUsed ?? 0)}/{r.perDay} tờ hôm nay. Tờ 500k là xu ảo, nhưng lời mời phỏng vấn là thật nên hãy nghiêm túc nhé.
         </p>
+        <p className="notice">Liên hệ của ứng viên chỉ mở sau khi bạn ấy nhận lời tờ 500k này.</p>
         <label className="field">
           <span>Lời nhắn ({r.messageMin}–{r.messageMax} ký tự)</span>
           <textarea value={message} onChange={(e) => setMessage(e.target.value)} maxLength={r.messageMax + 50} rows={4} aria-invalid={err?.field === 'message'} />

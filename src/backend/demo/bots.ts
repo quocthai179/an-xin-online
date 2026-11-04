@@ -38,13 +38,21 @@ export function startBots(backend: DemoBackend, opts: { acquireLeader: () => Pro
     timers.add(t);
   };
 
+  // BOT_HRS[0] is reserved for the welcome gift so the ticker chatter can never starve it of quota
+  const WELCOME_BOT = BOT_HRS[0];
+  const tickerBots = BOT_HRS.slice(1);
+  const exhausted = new Set<string>();
+
   const randomGift = async () => {
     const list: CandidateCard[] = await backend.listCandidates();
     const samples = list.filter((c) => c.isSample && c.status === 'sitting');
+    const bots = tickerBots.filter((b) => !exhausted.has(b.id));
+    if (!bots.length) return; // every ticker bot hit its daily limit: stop quietly until the next page load
     if (samples.length) {
       const c = samples[Math.floor(rand() * samples.length)];
-      const bot = BOT_HRS[Math.floor(rand() * BOT_HRS.length)];
-      await backend.botGift(bot.id, c.id, 'xu');
+      const bot = bots[Math.floor(rand() * bots.length)];
+      const r = await backend.botGift(bot.id, c.id, 'xu');
+      if (!r.ok && (r.error === 'LIMIT_DAILY' || r.error === 'RATE_LIMITED')) exhausted.add(bot.id);
     }
     later(8000 + rand() * 12000, () => void randomGift());
   };
@@ -56,7 +64,7 @@ export function startBots(backend: DemoBackend, opts: { acquireLeader: () => Pro
       const c = e.candidate;
       if (c.isSample || welcomed.has(c.id) || Date.now() - Date.parse(c.createdAt) > 60_000) return;
       welcomed.add(c.id);
-      later(FIRST_GIFT_DELAY_MS, () => void backend.botGift(BOT_HRS[0].id, c.id, 'xu'));
+      later(FIRST_GIFT_DELAY_MS, () => void backend.botGift(WELCOME_BOT.id, c.id, 'xu'));
     });
     later(8000 + rand() * 12000, () => void randomGift());
     const walkers: BotWalker[] = WALKERS.map((w) => newBotWalker(w.id, rand));

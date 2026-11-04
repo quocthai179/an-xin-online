@@ -109,7 +109,7 @@ Nếu Supabase không với tới được, app hiện banner "Mất kết nối
 1. Import repo vào Vercel (framework Next.js, `pnpm` được nhận từ `packageManager`). Không cần cấu hình build đặc biệt.
 2. Thêm biến môi trường (Production và Preview) như bảng dưới, **kể cả `NEXT_PUBLIC_SITE_URL`** là domain thật để link OG tuyệt đối.
 3. Các biến `NEXT_PUBLIC_*` được nhúng lúc build: đổi chúng thì phải build lại.
-4. CSP trong `next.config.ts` chỉ cho phép `connect-src` tới đúng host Supabase đã cấu hình (https và wss), không dùng wildcard.
+4. CSP được đặt theo từng request trong `src/proxy.ts` (nonce + `'strict-dynamic'`, `base-uri 'none'`, `form-action 'self'`, `object-src 'none'`; HSTS và COOP nằm trong `next.config.ts`) và chỉ cho phép `connect-src` tới đúng host Supabase đã cấu hình (https và wss), không dùng wildcard.
 5. Sau deploy: làm theo checklist smoke test trong `.squad/DB-VERIFICATION.md` mục 6, và thử `/c/mau-backend-1` (ảnh OG phải ra PNG).
 
 ## Biến môi trường
@@ -121,7 +121,21 @@ Nếu Supabase không với tới được, app hiện banner "Mất kết nối
 | `NEXT_PUBLIC_SITE_URL` | server | Domain gốc cho link OG tuyệt đối (mặc định `http://localhost:3000`). |
 | `NEXT_PUBLIC_DEMO_BOTS` | client | `0` tắt bot demo (mặc định bật). |
 | `SUPABASE_SERVICE_ROLE_KEY` | **chỉ server** | Cho `/api/admin/moderate`. Không bao giờ để tiền tố `NEXT_PUBLIC_`. |
-| `ADMIN_KEY` | **chỉ server** | Khóa cho header `x-admin-key` của `/api/admin/moderate` (so sánh thời gian hằng). |
+| `ADMIN_KEY` | **chỉ server** | Khóa cho header `x-admin-key` của `/api/admin/moderate` (so sánh thời gian hằng). **Phải dài >= 32 ký tự**, ngắn hơn thì route trả 503. Sai khóa 5 lần/IP thì bị chặn tạm (429); mọi thao tác admin được ghi log JSON (`scope: admin_audit`). Tạo khóa: `openssl rand -hex 32`. |
+| `SHARE_SECRET` | **chỉ server** | Khóa HMAC ký tên người chơi trong link chia sẻ quẻ `/q/<id>?n=&d=&s=` (>= 16 ký tự, nên `openssl rand -hex 32`). Thiếu thì tên bị bỏ và thẻ hiện "Một người qua đường", để không ai nhét chữ tùy ý lên domain của phố. |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | client | Bật CAPTCHA Cloudflare Turnstile ở màn đăng ký (chỉ Supabase mode). Token được gửi cùng `signInAnonymously`. Xem mục CAPTCHA bên dưới. |
+| `NEXT_PUBLIC_REPORT_EMAIL` | client | Địa chỉ nhận "Báo cáo HR này" (mailto). Bỏ trống thì nút chỉ hướng dẫn cách báo cáo. |
+
+### CAPTCHA chống tài khoản ảo (Turnstile)
+
+1. Tạo widget ở Cloudflare Turnstile (Managed), lấy **Site key** và **Secret key**.
+2. Supabase Dashboard > Authentication > Settings (Attack Protection) > bật **Enable Captcha protection**, chọn **Cloudflare Turnstile**, dán Secret key.
+3. Đặt `NEXT_PUBLIC_TURNSTILE_SITE_KEY=<site key>` rồi build lại. Khi biến này có, CSP tự thêm `https://challenges.cloudflare.com` vào `script-src`/`frame-src` (chỉ lúc đó); onboarding hiện widget và đăng nhập ẩn danh chỉ chạy sau khi giải xong. Demo mode không bị ảnh hưởng.
+4. Bật bước 2 mà quên bước 3 thì mọi lần đăng nhập ẩn danh sẽ bị Supabase từ chối. Làm cả hai cùng lúc.
+
+### Giới hạn tần suất (rate limiting)
+
+`/api/og/*`, `/api/share/sign` và `/api/admin/*` có token bucket theo IP **trong bộ nhớ** (`src/server/rateLimit.ts`). Đó chỉ là lớp làm chậm kiểu best effort: mỗi lambda của Vercel có bộ nhớ riêng. Khi lên production hãy đặt thêm luật Vercel WAF / Cloudflare Rate Limiting cho `/api/og/*` và `/api/admin/*`. `GET /api/street` (snapshot phố, cache 15 giây) và `getPublicCandidate` (cache 60 giây) giảm tải RPC cho trang chia sẻ.
 
 Kiểm duyệt thủ công (khi biển bị báo cáo và chờ duyệt):
 
