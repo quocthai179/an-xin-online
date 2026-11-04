@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:db": "bash supabase/tests/run.sh"
+    "test:db": "bash supabase/tests/run.sh",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@react-three/drei": "10.7.9",
@@ -23,6 +24,7 @@
     "zustand": "5.0.16"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/node": "22.19.1",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
