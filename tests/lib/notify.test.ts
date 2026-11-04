@@ -43,3 +43,22 @@ describe('notify', () => {
     expect(formatTickerLine({ type: 'candidate_remove', id: 'x', at: '' })).toBeNull();
   });
 });
+
+import { notifView } from '@/lib/notifText';
+
+describe('notifView', () => {
+  it('formats gifts, 500k and offers with the right sound and prominence', () => {
+    expect(notifView({ type: 'gift', payload: { kind: 'xu', giverName: 'Lan', giverCompany: 'ACME' } })).toMatchObject({
+      sound: 'coin', prominent: false, text: expect.stringContaining('HR Lan @ ACME'),
+    });
+    expect(notifView({ type: 'gift', payload: { kind: 'love', giverName: 'Nam' } }).sound).toBe('love');
+    expect(notifView({ type: 'invite_received', payload: { hrName: 'Lan' } })).toMatchObject({ sound: 'note', prominent: true });
+    expect(notifView({ type: 'offer_received', payload: { hrName: 'Lan', position: 'Dev' } })).toMatchObject({ sound: 'offer', prominent: true });
+    expect(notifView({ type: 'invite_responded', payload: { candidateName: 'A', accepted: true } }).text).toContain('nhận lời mời');
+    expect(notifView({ type: 'incense_for_you', payload: {} }).text).toContain('nhang');
+  });
+  it('keeps hostile payloads as plain text', () => {
+    const v = notifView({ type: 'gift', payload: { kind: 'xu', giverName: '<script>alert(1)</script>' } });
+    expect(v.text).toContain('<script>');
+  });
+});

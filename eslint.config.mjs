@@ -6,11 +6,18 @@ const config = [
   ...typescript,
   {
     rules: {
-      'react/no-danger': 'error',
+      // DESIGN section 11: user text is only ever rendered as React text nodes
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']",
+          message: 'dangerouslySetInnerHTML is banned: all user content is rendered as plain text.',
+        },
+      ],
     },
   },
   {
-    ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts', 'coverage/**'],
+    ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts', 'coverage/**', 'e2e/**'],
   },
 ];
 

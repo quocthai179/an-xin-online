@@ -1,5 +1,103 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
+import { useBoot, useStreetSync } from '@/hooks/useStreetSync';
+import { useSession } from '@/state/session';
+import { useUi } from '@/state/ui';
+import { useWorld } from '@/state/world';
+import { AccountPanel } from '../ui/AccountPanel';
+import { CandidateForm } from '../ui/CandidateForm';
+import { CandidatePanel } from '../ui/CandidatePanel';
+import { DemoBanner } from '../ui/DemoBanner';
+import { Hud } from '../ui/Hud';
+import { Inbox } from '../ui/Inbox';
+import { InviteForm } from '../ui/InviteForm';
+import { Leaderboard } from '../ui/Leaderboard';
+import { ListView2D } from '../ui/ListView2D';
+import { OfferForm } from '../ui/OfferForm';
+import { Onboarding } from '../ui/Onboarding';
+import { TemplePanel } from '../ui/TemplePanel';
+import { Ticker } from '../ui/Ticker';
+import { Toasts } from '../ui/Toasts';
+
+/**
+ * Mount point for the street. Today only the 2D list view exists.
+ * The 3D phase renders `<Scene>` (dynamic import, ssr:false) here when `view === '3d'` and flips SCENE_AVAILABLE.
+ */
+const SCENE_AVAILABLE = false;
+
+function Panels() {
+  const panel = useUi((s) => s.panel);
+  switch (panel.kind) {
+    case 'candidate':
+      return <CandidatePanel key={panel.id} id={panel.id} />;
+    case 'form':
+      return <CandidateForm />;
+    case 'inbox':
+      return <Inbox />;
+    case 'board':
+      return <Leaderboard />;
+    case 'temple':
+      return <TemplePanel />;
+    case 'invite':
+      return <InviteForm id={panel.id} />;
+    case 'offer':
+      return <OfferForm id={panel.id} />;
+    case 'account':
+      return <AccountPanel />;
+    default:
+      return null;
+  }
+}
+
 export function StreetApp() {
-  return <main>Phố Xin Việc 3D</main>;
+  useBoot();
+  useStreetSync();
+  const ready = useSession((s) => s.ready);
+  const me = useSession((s) => s.me);
+  const backend = useSession((s) => s.backend);
+  const loaded = useWorld((s) => s.loaded);
+  const setPanel = useUi((s) => s.setPanel);
+  const [view, setView] = useState<'2d' | '3d'>('2d');
+  const deepLinked = useRef(false);
+
+  // /?c=<slug> deep link: open that candidate once the street is loaded
+  useEffect(() => {
+    if (deepLinked.current || !ready || !me || !loaded) return;
+    deepLinked.current = true;
+    const slug = new URLSearchParams(window.location.search).get('c');
+    if (!slug) return;
+    const found = Object.values(useWorld.getState().candidates).find((c) => c.slug === slug);
+    if (found) setPanel({ kind: 'candidate', id: found.id });
+  }, [ready, me, loaded, setPanel]);
+
+  if (!ready) {
+    return (
+      <main className="boot" aria-busy="true">
+        <p>Đang trải chiếu cho phố...</p>
+      </main>
+    );
+  }
+
+  return (
+    <div className="app">
+      {backend?.mode === 'demo' && <DemoBanner />}
+      {!me ? (
+        <main className="center">
+          <Onboarding />
+        </main>
+      ) : (
+        <>
+          <Hud view={view} sceneAvailable={SCENE_AVAILABLE} onToggleView={() => setView(view === '2d' ? '3d' : '2d')} />
+          <main className="street">
+            {/* 3D mount point: {view === '3d' && SCENE_AVAILABLE ? <Scene /> : <ListView2D />} */}
+            <ListView2D />
+          </main>
+          <Ticker />
+          <Panels />
+        </>
+      )}
+      <Toasts />
+    </div>
+  );
 }
