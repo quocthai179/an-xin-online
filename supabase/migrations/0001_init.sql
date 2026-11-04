@@ -4,6 +4,16 @@
 create extension if not exists unaccent with schema extensions;
 create extension if not exists pgcrypto with schema extensions;
 
+-- Moderation (lower(), [[:alnum:]]) needs a Unicode-aware LC_CTYPE. Hosted Supabase uses C.UTF-8 (OK); a plain "C"
+-- ctype would silently turn 'LỒN' / 'Đ.M' into non-matches, so fail the migration loudly instead.
+do $$
+begin
+  if lower('ĐỒ') <> 'đồ' or 'ồ' !~ '^[[:alnum:]]$' then
+    raise exception 'LC_CTYPE % cannot lowercase/classify Vietnamese letters; use a UTF-8 locale (C.UTF-8 / en_US.UTF-8)',
+      (select datctype from pg_database where datname = current_database());
+  end if;
+end $$;
+
 create schema if not exists private;
 revoke all on schema private from public;
 -- private.* is never exposed through the Data API and anon/authenticated get no USAGE on it.
@@ -131,7 +141,7 @@ language sql stable as $$
   select case when ip is null then null
          else encode(extensions.digest(ip || (select value from private.secrets where name = 'ip_salt'), 'sha256'), 'hex') end
   from (select nullif(btrim(split_part(coalesce(
-          current_setting('request.headers', true)::json ->> 'x-forwarded-for', ''), ',', 1)), '') as ip) s
+          nullif(current_setting('request.headers', true), '')::json ->> 'x-forwarded-for', ''), ',', 1)), '') as ip) s
 $$;
 
 -- ---------- Types ----------
@@ -409,6 +419,7 @@ begin
   if v_uid is null then return private.err('UNAUTHENTICATED'); end if;
   if v_name is null or char_length(v_name) not between 2 and 24 then return private.err('VALIDATION', 'display_name'); end if;
   if private.is_blocked(v_name) then return private.err('BLOCKED_CONTENT', 'display_name'); end if;
+  if p_role is null then return private.err('VALIDATION', 'role'); end if;               -- same order as validateProfileInput
   if p_role = 'hr' then
     if v_company is null or char_length(v_company) not between 2 and 40 then return private.err('VALIDATION', 'company'); end if;
     if private.is_blocked(v_company) then return private.err('BLOCKED_CONTENT', 'company'); end if;
@@ -838,7 +849,8 @@ begin
     update public.offers set status = 'expired' where id = v_o.id; return private.err('EXPIRED'); end if;
   if v_o.status <> 'pending' then return private.err('NOT_PENDING'); end if;
   update public.offers set status = case when p_accept then 'accepted'::public.offer_status else 'declined' end,
-         responded_at = now(), candidate_show_company = p_show_company, response_reason = private.clean(p_reason)
+         responded_at = now(), candidate_show_company = coalesce(p_show_company, false),
+         response_reason = left(private.clean(p_reason), 200)
    where id = v_o.id returning * into v_o;
   if p_accept then                                                                           -- BR-O3
     v_company := case when v_o.hr_show_company and p_show_company then v_o.hr_company end;
@@ -904,7 +916,7 @@ begin
   select * into v_c from public.candidates where id = p_candidate_id for update;
   if not found then return private.err('NOT_FOUND'); end if;
   if v_c.user_id = v_uid then return private.err('SELF_ACTION'); end if;
-  if p_reason not in ('obscene','harassment','spam','personal_info','other') then return private.err('VALIDATION', 'reason'); end if;
+  if p_reason is null or p_reason not in ('obscene','harassment','spam','personal_info','other') then return private.err('VALIDATION', 'reason'); end if;
   if not private.hit('report:' || v_uid, interval '1 day', (private.cfg()->>'reportsPerDay')::int) then return private.err('RATE_LIMITED'); end if;
   insert into public.reports(reporter_id, candidate_id, reason, note) values (v_uid, p_candidate_id, p_reason, left(private.clean(p_note), 200))
   on conflict (reporter_id, candidate_id) do nothing;
@@ -952,6 +964,7 @@ $$;
 
 -- ---------- Privileges ----------
 revoke all on all tables in schema public from anon, authenticated;
+revoke all on all sequences in schema public from anon, authenticated;     -- identity sequences (gifts/notifications/reports)
 grant select on public.profiles, public.invitations, public.offers, public.notifications to authenticated;
 revoke execute on all functions in schema public from public, anon, authenticated;
 revoke execute on all functions in schema private from public, anon, authenticated;
@@ -966,3 +979,9 @@ grant execute on function
 to authenticated;
 grant execute on function public.admin_moderate(uuid, text), public.admin_list_pending() to service_role;
 alter default privileges in schema public revoke execute on functions from public, anon, authenticated;
+-- Per-schema default privileges cannot remove the built-in EXECUTE-to-PUBLIC grant; this global one does (objects
+-- created later by this role in any schema need explicit GRANTs, which is the intent: RPC access is always opt-in).
+alter default privileges revoke execute on functions from public;
+-- Supabase auto-grants future tables/sequences in public to anon/authenticated; later migrations must GRANT explicitly.
+alter default privileges in schema public revoke all on tables from anon, authenticated;
+alter default privileges in schema public revoke all on sequences from anon, authenticated;

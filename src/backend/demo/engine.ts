@@ -520,7 +520,8 @@ export function respondOffer(
   o.status = accept ? 'accepted' : 'declined';
   o.respondedAt = ctx.now;
   o.candidateShowCompany = !!opts.showCompany;
-  o.responseReason = clean(opts.reason);
+  const reason = clean(opts.reason);
+  o.responseReason = reason === null ? null : [...reason].slice(0, 200).join(''); // SQL: left(private.clean(p_reason), 200)
   const emits: Emit[] = [];
   if (accept) {
     const company = o.hrShowCompany && opts.showCompany ? o.hrCompany : null; // BR-O4
