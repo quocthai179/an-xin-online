@@ -15,7 +15,8 @@ const FALLBACK_HEADERS = { 'Cache-Control': 'public, max-age=30, s-maxage=60' };
  * Render fully here and hand back a plain Response: any failure throws inside the caller's try block.
  */
 async function render(el: React.ReactElement, fonts: Awaited<ReturnType<typeof loadOgFonts>>, headers: Record<string, string>): Promise<Response> {
-  const img = new ImageResponse(el, { ...SIZE, fonts });
+  // an explicit empty `fonts` array makes satori fail with "No fonts are loaded": omit it to use the built-in font (DEF-4)
+  const img = new ImageResponse(el, fonts.length ? { ...SIZE, fonts } : { ...SIZE });
   const body = await img.arrayBuffer();
   return new Response(body, { status: 200, headers: { ...headers, 'Content-Type': 'image/png' } });
 }

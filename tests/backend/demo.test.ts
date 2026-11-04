@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { World, candInput, collect, sit, AVATAR } from './helpers';
 import { LIMITS } from '@/lib/rules';
 
+/** 0002: a new HR account cannot send 500k for hrInviteMinAgeMinutes (TOO_NEW); reports from fresh profiles are not counted */
+const ripenHr = (w: World) => w.advance(LIMITS.hrInviteMinAgeMinutes * 60_000 + 1000);
+const ripenReporters = (w: World) => w.advance(LIMITS.reporterMinAgeMinutes * 60_000 + 1000);
+
 describe('DemoBackend: identity and seed', () => {
   it('seeds >= 40 sample candidates and has no user before register', async () => {
     const w = new World();
@@ -185,6 +189,8 @@ describe('DemoBackend: invitations, privacy and offers', () => {
     const w = new World();
     const hr = await w.user('hr', 'hr', 'Lan');
     const { b: cand, id } = await sit(w, 'c');
+    expect(await hr.sendInvitation(id, 'Mời bạn phỏng vấn nhé', 'hr@acme.vn')).toMatchObject({ ok: false, error: 'TOO_NEW' });
+    ripenHr(w);
     expect(await hr.getCandidateContact(id)).toMatchObject({ ok: false, error: 'CONTACT_LOCKED' });
     expect((await hr.getCandidate(id))?.me?.canSeeContact).toBe(false);
     const sample = (await hr.listCandidates()).find((c) => c.isSample)!;
@@ -194,6 +200,10 @@ describe('DemoBackend: invitations, privacy and offers', () => {
     const inv = await hr.sendInvitation(id, 'Mời bạn phỏng vấn nhé', 'hr@acme.vn');
     expect(inv.ok).toBe(true);
     expect(cSeen.notifs[0]).toMatchObject({ type: 'invite_received', payload: { hrContact: 'hr@acme.vn' } });
+    // 0002: sending is not enough, the contact opens only once the candidate ACCEPTS
+    expect(await hr.getCandidateContact(id)).toMatchObject({ ok: false, error: 'CONTACT_LOCKED' });
+    if (!inv.ok) throw new Error();
+    expect((await cand.respondInvitation(inv.data.id, true)).ok).toBe(true);
     expect(await hr.getCandidateContact(id)).toMatchObject({ ok: true, data: { value: 'me@example.com' } });
     expect((await cand.getCandidateContact(id)).ok).toBe(true);
     const stranger = await w.user('s', 'hr', 'Stranger');
@@ -205,6 +215,7 @@ describe('DemoBackend: invitations, privacy and offers', () => {
     const w = new World();
     const hr = await w.user('hr', 'hr');
     const c1 = await sit(w, 'c1');
+    ripenHr(w);
     expect(await hr.sendInvitation(c1.id, 'ngắn', 'hr@acme.vn')).toMatchObject({ ok: false, field: 'message' });
     expect(await hr.sendInvitation(c1.id, 'Mời bạn phỏng vấn nhé', 'x')).toMatchObject({ ok: false, field: 'hr_contact' });
     const first = await hr.sendInvitation(c1.id, 'Mời bạn phỏng vấn nhé', 'hr@acme.vn');
@@ -238,9 +249,11 @@ describe('DemoBackend: invitations, privacy and offers', () => {
     const c = await sit(w, 'c');
     for (let i = 0; i < 5; i++) {
       const hr = await w.user(`hr${i}`, 'hr', `HR ${i}`);
+      ripenHr(w);
       expect((await hr.sendInvitation(c.id, 'Mời bạn phỏng vấn nhé', 'hr@acme.vn')).ok).toBe(true);
     }
     const hr6 = await w.user('hr6', 'hr');
+    ripenHr(w);
     expect(await hr6.sendInvitation(c.id, 'Mời bạn phỏng vấn nhé', 'hr@acme.vn')).toMatchObject({ error: 'CANDIDATE_FULL' });
   });
 
@@ -249,6 +262,7 @@ describe('DemoBackend: invitations, privacy and offers', () => {
     const hr = await w.user('hr', 'hr', 'Lan', 'ACME');
     const other = await w.user('hr2', 'hr', 'Minh', 'Other Co');
     const { b: cand, id } = await sit(w, 'c');
+    ripenHr(w);
     const hrSeen = collect(hr);
     const otherSeen = collect(other);
     const cSeen = collect(cand);
@@ -298,6 +312,7 @@ describe('DemoBackend: invitations, privacy and offers', () => {
     const w = new World();
     const hr = await w.user('hr', 'hr', 'Lan', 'ACME');
     const { b: cand, id } = await sit(w, 'c');
+    ripenHr(w);
     const inv = await hr.sendInvitation(id, 'Mời bạn phỏng vấn nhé', 'hr@acme.vn');
     if (!inv.ok) throw new Error();
     await cand.respondInvitation(inv.data.id, true);
@@ -311,6 +326,7 @@ describe('DemoBackend: invitations, privacy and offers', () => {
     const w = new World();
     const hr = await w.user('hr', 'hr');
     const { b: cand, id } = await sit(w, 'c');
+    ripenHr(w);
     const inv = await hr.sendInvitation(id, 'Mời bạn phỏng vấn nhé', 'hr@acme.vn');
     if (!inv.ok) throw new Error();
     await cand.respondInvitation(inv.data.id, true);
@@ -330,6 +346,7 @@ describe('DemoBackend: invitations, privacy and offers', () => {
     const hr = await w.user('hr', 'hr');
     const cs = [];
     for (const n of ['a', 'b', 'c', 'd']) cs.push(await sit(w, `cand-${n}`));
+    ripenHr(w);
     for (let i = 0; i < 4; i++) {
       if (i === 3) w.days(1);
       const inv = await hr.sendInvitation(cs[i].id, 'Mời bạn phỏng vấn nhé', 'hr@acme.vn');
@@ -375,19 +392,26 @@ describe('DemoBackend: temple, fortune, reports', () => {
     expect(await b.getFortune()).toMatchObject({ ok: true });
   });
 
-  it('3 reports hide the sign and notify the owner; one report per reporter', async () => {
+  it('5 distinct aged reporters hide the sign and notify the owner; one report per reporter; fresh profiles do not count', async () => {
     const w = new World();
     const { b: cand, id } = await sit(w, 'c');
     const cSeen = collect(cand);
     const reporters = [];
-    for (let i = 0; i < 3; i++) reporters.push(await w.user(`r${i}`, 'viewer'));
+    const N = LIMITS.reportsToHideSign;
+    for (let i = 0; i < N; i++) reporters.push(await w.user(`r${i}`, 'viewer'));
+    ripenReporters(w); // the reporters above are now old enough; `freshLate` is created after, so its report is stored but not counted
+    const freshLate = await w.user('fresh2', 'viewer');
+    expect((await freshLate.report(id, 'spam')).ok).toBe(true);
+    expect((await reporters[0].getCandidate(id))?.signState).toBe('ok');
     expect((await reporters[0].report(id, 'spam')).ok).toBe(true);
     expect(await reporters[0].report(id, 'spam')).toMatchObject({ error: 'ALREADY_REPORTED' });
     expect(await cand.report(id, 'spam')).toMatchObject({ error: 'SELF_ACTION' });
     expect(await reporters[1].report(id, 'bogus' as never)).toMatchObject({ error: 'VALIDATION' });
     expect((await reporters[0].getCandidate(id))?.signText).not.toBeNull();
     await reporters[1].report(id, 'obscene', 'tục');
-    await reporters[2].report(id, 'harassment');
+    for (let i = 2; i < N - 1; i++) await reporters[i].report(id, 'harassment');
+    expect((await reporters[0].getCandidate(id))?.signState).toBe('ok'); // N-1 counted reporters: still visible
+    await reporters[N - 1].report(id, 'harassment');
     const c = await reporters[0].getCandidate(id);
     expect(c?.signState).toBe('pending_review');
     expect(c?.signText).toBeNull();

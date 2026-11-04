@@ -19,6 +19,8 @@ export interface DemoDeps {
   identity: string;
   newId?: () => string;
   presenceTimers?: boolean;
+  /** skip the account-age gates (browser demo only, see engine `Ctx.relaxAgeGates`); strict by default so tests exercise the real rules */
+  relaxAgeGates?: boolean;
 }
 
 const STREET_EVENTS = new Set(['gift', 'invite', 'offer', 'placed', 'incense', 'candidate_upsert', 'candidate_remove']);
@@ -58,7 +60,7 @@ export class DemoBackend implements Backend {
   }
 
   private ctx(uid: string | null = this.uid): engine.Ctx {
-    return { now: this.deps.now(), uid, newId: this.newId };
+    return { now: this.deps.now(), uid, newId: this.newId, relaxAgeGates: this.deps.relaxAgeGates };
   }
 
   private dispatch(m: BusMessage): void {

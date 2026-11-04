@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { Me, Role } from '@/backend/types';
 import { errorMessage } from '@/lib/messages';
 import { defaultAvatar } from '@/lib/format';
@@ -28,16 +28,18 @@ export function Onboarding({ initial, onDone }: { initial?: Me['profile']; onDon
   const [trap, setTrap] = useState('');
   const [err, setErr] = useState<{ field?: string; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const inflight = useRef(false); // a double click can fire twice before `busy` re-renders
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     unlockAudio();
     if (trap) return; // honeypot: bots fill the hidden field, humans never see it
-    if (!backend || busy) return;
+    if (!backend || busy || inflight.current) return;
     if (!agree) {
       setErr({ field: 'agree', text: 'Tick vào ô đồng ý để vào phố nhé.' });
       return;
     }
+    inflight.current = true;
     setBusy(true);
     setErr(null);
     const r = await backend.register({
@@ -45,6 +47,8 @@ export function Onboarding({ initial, onDone }: { initial?: Me['profile']; onDon
       role,
       company: role === 'hr' ? company : undefined,
       avatar: initial?.avatar ?? defaultAvatar(hashString(name || 'x')),
+    }).finally(() => {
+      inflight.current = false;
     });
     setBusy(false);
     if (!r.ok) {

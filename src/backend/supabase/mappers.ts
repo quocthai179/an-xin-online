@@ -14,7 +14,7 @@ const ERROR_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'RATE_LIMITED', 'IP_LIMIT', 'LIMIT_DAILY', 'LIMIT_PER_CANDIDATE_DAY', 'INVITE_ALREADY_OPEN', 'INVITE_COOLDOWN',
   'CANDIDATE_FULL', 'NEED_ACCEPTED_INVITE', 'OFFER_ALREADY_OPEN', 'HR_OFFER_LIMIT', 'EXPIRED', 'NOT_PENDING',
   'ALREADY_DONE', 'ALREADY_REPORTED', 'CONTACT_LOCKED', 'VALIDATION', 'BLOCKED_CONTENT', 'PII_NOT_ALLOWED',
-  'NAME_CHANGE_COOLDOWN', 'ZONE_CHANGE_COOLDOWN', 'NETWORK',
+  'NAME_CHANGE_COOLDOWN', 'ZONE_CHANGE_COOLDOWN', 'MODERATION_LOCKED', 'BANNED', 'TOO_NEW', 'NETWORK',
 ]);
 
 export interface RpcResponse {
@@ -234,7 +234,8 @@ export function mapNotification(n: Json): AppNotification {
 }
 
 const actor = (a: Json) => ({ id: str(a.id), name: str(a.name), role: a.role, company: strOrNull(a.company) });
-const candRef = (c: Json) => ({ id: str(c.id), name: str(c.name), zone: c.zone as ZoneId });
+// an anonymous (hide_from_ticker) candidate arrives without id and zone
+const candRef = (c: Json) => ({ id: str(c.id), name: str(c.name), zone: typeof c.zone === 'string' ? (c.zone as ZoneId) : null });
 
 /** Broadcast payloads of `private.street(...)`. Unknown/malformed events return null and are ignored. */
 export function mapStreetEvent(event: string, p: unknown): StreetEvent | null {
@@ -254,6 +255,7 @@ export function mapStreetEvent(event: string, p: unknown): StreetEvent | null {
           type: 'placed',
           candidate: { ...cand, decayed: { hr: 0, love: 0, invites: 0, accepted: 0 }, xuWeek: 0, xuToday: 0 },
           company: strOrNull(p.company),
+          ...(typeof p.name === 'string' ? { name: p.name } : {}),
           at,
         };
       }

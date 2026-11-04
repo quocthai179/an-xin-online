@@ -1,11 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse, type NextRequest } from 'next/server';
-import { ADMIN_KEY_MIN_LENGTH, adminKeyMatches, auditLog, parseModerateBody } from '@/server/admin';
+import { ADMIN_KEY_MIN_LENGTH, adminKeyMatches, auditLog, parseBanBody, parseModerateBody, parsePaging } from '@/server/admin';
 import { clientIp, limits, tooMany } from '@/server/rateLimit';
 
 // Moderation queue for the operator (BR-M6). Server only: the service role key never reaches the browser.
 //   GET  /api/admin/moderate                      -> candidates whose sign is pending review
-//   POST /api/admin/moderate {candidateId, action} -> approve_sign | remove_sign | hide | delete
+//   GET  /api/admin/moderate?offset=0&limit=50    -> paginated (limit 1..200)
+//   POST /api/admin/moderate {candidateId, action} -> approve_sign | remove_sign | hide | unhide | delete | ban | unban
+//   POST /api/admin/moderate {userId, action: "ban_user" | "unban_user", reason?} -> admin_ban_user (works without a candidate row)
 // Both need the header `x-admin-key: <ADMIN_KEY>`.
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +36,8 @@ function authorize(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const a = authorize(req);
   if (!a.client) return a.res;
-  const { data, error } = await a.client.rpc('admin_list_pending');
+  const { offset, limit } = parsePaging(req.nextUrl.searchParams);
+  const { data, error } = await a.client.rpc('admin_list_pending', { p_offset: offset, p_limit: limit });
   if (error) return json({ error: 'UPSTREAM' }, 502);
   auditLog({ event: 'admin_list_pending', ip: a.ip, count: Array.isArray(data) ? data.length : 0 });
   return json({ pending: data ?? [] });
@@ -48,6 +51,14 @@ export async function POST(req: NextRequest) {
     body = await req.json();
   } catch {
     return json({ error: 'BAD_REQUEST' }, 400);
+  }
+  const ban = parseBanBody(body);
+  if (ban) {
+    const { data, error } = await a.client.rpc('admin_ban_user', { p_user_id: ban.userId, p_banned: ban.banned, p_reason: ban.reason });
+    const r = data as { ok?: boolean; error?: string } | null;
+    auditLog({ event: 'admin_ban_user', ip: a.ip, userId: ban.userId, banned: ban.banned, ok: !error && r?.ok === true, error: r?.error });
+    if (error) return json({ error: 'UPSTREAM' }, 502);
+    return r?.ok ? json({ ok: true }) : json({ error: r?.error ?? 'UPSTREAM' }, 400);
   }
   const parsed = parseModerateBody(body);
   if (!parsed) return json({ error: 'BAD_REQUEST' }, 400);

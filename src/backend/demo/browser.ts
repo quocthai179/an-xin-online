@@ -23,7 +23,7 @@ export async function createDemoBackend(): Promise<DemoBackend> {
   );
   const bus: Bus = typeof BroadcastChannel !== 'undefined' ? new BroadcastBus() : new MemoryBus();
   const locks: Locks = hasLocks ? new WebLocks() : new MemoryLocks();
-  const backend = new DemoBackend({ store: local, bus, locks, now: () => Date.now(), identity });
+  const backend = new DemoBackend({ store: local, bus, locks, now: () => Date.now(), identity, relaxAgeGates: true });
   window.__pxv = { uid: identity };
 
   if (process.env.NEXT_PUBLIC_DEMO_BOTS !== '0') {

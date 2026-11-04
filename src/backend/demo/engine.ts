@@ -27,6 +27,11 @@ export interface Ctx {
   now: number;
   uid: string | null;
   newId: () => string;
+  /**
+   * Demo-in-the-browser only: skips the account-age gates (HR 10-min TOO_NEW gate, reporter >= 1 h counted age).
+   * They make a local single-browser demo unusable and abuse is impossible there. Default (undefined) = strict production rules.
+   */
+  relaxAgeGates?: boolean;
 }
 export interface Out<T> {
   res: Result<T>;
@@ -505,7 +510,7 @@ export function sendInvitation(db: DemoDb, ctx: Ctx, candidateId: string, messag
     inCooldown: mineAll.some((i) => i.createdAt > ctx.now - r.cooldownDays * DAY_MS),
     dayCount: Object.values(db.invitations).filter((i) => i.hrId === uid && i.day === today).length,
     candidateOpen: Object.values(db.invitations).filter((i) => i.candidateId === candidateId && i.status === 'pending').length,
-    hrAgeMs: prof?.role === 'hr' ? ctx.now - (prof.hrSince ?? prof.createdAt) : undefined,
+    hrAgeMs: prof?.role === 'hr' && !ctx.relaxAgeGates ? ctx.now - (prof.hrSince ?? prof.createdAt) : undefined,
   });
   if (fault) return fail(fault);
   const inv: InvRow = {
@@ -694,7 +699,7 @@ export function reportCandidate(db: DemoDb, ctx: Ctx, candidateId: string, reaso
   });
   if (late) return fail(late);
   // sec M2: reports from profiles younger than reporterMinAgeMinutes are stored but not counted
-  const counted = reporter.createdAt <= ctx.now - LIMITS.reporterMinAgeMinutes * 60_000;
+  const counted = !!ctx.relaxAgeGates || reporter.createdAt <= ctx.now - LIMITS.reporterMinAgeMinutes * 60_000;
   db.reports.push({ reporterId: uid, candidateId, reason, note: (clean(note) ?? '').slice(0, 200) || null, at: ctx.now, counted });
   if (counted) cand.reportCount += 1;
   const emits: Emit[] = [];

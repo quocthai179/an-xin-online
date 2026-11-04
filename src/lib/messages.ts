@@ -1,4 +1,5 @@
 import type { ErrorCode } from '@/backend/types';
+import { FIELD_LIMITS } from './rules';
 
 export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   UNAUTHENTICATED: 'Bạn chưa vào phố. Tải lại trang rồi thử nhé.',
@@ -34,7 +35,13 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   NETWORK: 'Mạng lag, thử lại nhé.',
 };
 
+/** VALIDATION messages that name the rule instead of the generic "kiểm tra lại" (AC-2.3). */
+const VALIDATION_RULES: Record<string, string> = {
+  sign_text: `Biển carton phải dài ${FIELD_LIMITS.signMin}–${FIELD_LIMITS.signMax} ký tự và tối đa 2 dòng.`,
+};
+
 export function errorMessage(code: ErrorCode, field?: string): string {
+  if (code === 'VALIDATION' && field && VALIDATION_RULES[field]) return VALIDATION_RULES[field];
   const base = ERROR_MESSAGES[code] ?? ERROR_MESSAGES.VALIDATION;
   return field && (code === 'VALIDATION' || code === 'BLOCKED_CONTENT' || code === 'PII_NOT_ALLOWED')
     ? `${base} (${FIELD_LABELS[field] ?? field})`

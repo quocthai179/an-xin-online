@@ -52,9 +52,8 @@ test('markup in names is rendered as text, never as HTML', async ({ page }) => {
   await expect(page.locator('.me b')).toHaveCount(0);
 });
 
-// DEF-2: "Đổi người (demo)" is supposed to turn this tab into another demo user, but the reloaded tab re-adopts
-// the first stored identity whose lock is free (often itself).
-test.fixme('"Đổi người (demo)" switches to a different user', async ({ context }) => {
+// DEF-2 (fixed): "Đổi người (demo)" turns this tab into a brand-new demo user.
+test('"Đổi người (demo)" switches to a different user', async ({ context }) => {
   const a = await context.newPage();
   await a.goto('/?view=2d');
   await registerAs(a, 'viewer', 'Alpha Một');

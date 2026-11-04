@@ -5,7 +5,7 @@ import { mapCardLight, mapListCard, mapStreetEvent } from '@/backend/supabase/ma
 import { SupabasePresence } from '@/backend/supabase/presence';
 import { DemoPresence } from '@/backend/demo/presence';
 import { MemoryBus } from '@/backend/demo/bus';
-import { claimIdentity, MemoryIdentityLocks } from '@/backend/demo/identity';
+import { claimIdentity, forgetSessionIdentity, MemoryIdentityLocks } from '@/backend/demo/identity';
 import { MemoryStore } from '@/backend/demo/db';
 import { useSession } from '@/state/session';
 import { useWorld } from '@/state/world';
@@ -196,6 +196,19 @@ describe('Minor 5/6: demo identity and hidden tabs', () => {
     const [a, b] = await Promise.all([claimIdentity(deps(new MemoryStore())), claimIdentity(deps(new MemoryStore()))]);
     expect(a).not.toBe(b);
     expect(JSON.parse(local.get('pxv:demo:users')!).sort()).toEqual([a, b].sort());
+  });
+
+  it('"Đổi người (demo)" creates a new user instead of re-adopting a stored one (DEF-2)', async () => {
+    const local = new MemoryStore();
+    const session = new MemoryStore();
+    const locks = new MemoryIdentityLocks();
+    let n = 0;
+    const deps = { local, session, locks, newId: () => `u${++n}` };
+    const first = await claimIdentity(deps);
+    expect(await claimIdentity({ ...deps, locks: new MemoryIdentityLocks() })).toBe(first); // plain reload keeps the user
+    forgetSessionIdentity(session);
+    const second = await claimIdentity({ ...deps, locks: new MemoryIdentityLocks() });
+    expect(second).not.toBe(first);
   });
 
   it('a hidden-tab peer survives the normal 15 s expiry', async () => {

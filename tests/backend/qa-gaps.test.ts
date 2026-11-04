@@ -6,7 +6,7 @@ import { toRanked } from '@/state/world';
 import { drawFortuneDemo, selectFortune } from '@/lib/fortune';
 import { effectiveStatus } from '@/lib/notify';
 import { LIMITS } from '@/lib/rules';
-import { collect, sit, World, AVATAR } from './helpers';
+import { sit, World, AVATAR } from './helpers';
 
 const MSG = 'Mời bạn phỏng vấn nhé';
 /** Security hardening: new HR accounts cannot send 500k and new reporters are not counted until their profile is old enough. */

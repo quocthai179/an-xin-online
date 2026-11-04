@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { CandidateInput, WorkMode } from '@/backend/types';
 import { errorMessage } from '@/lib/messages';
 import { FIELD_LIMITS } from '@/lib/rules';
@@ -42,6 +42,7 @@ export function CandidateForm() {
   const [agree, setAgree] = useState(!!existing);
   const [err, setErr] = useState<{ field: string; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const inflight = useRef(false); // a double click can fire twice before `busy` re-renders
 
   const skillList = useMemo(() => skills.split(/[,\n]/).map((s) => s.trim()).filter(Boolean), [skills]);
 
@@ -64,13 +65,16 @@ export function CandidateForm() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!backend || busy) return;
+    if (!backend || busy || inflight.current) return;
     if (!agree) return setErr({ field: 'agree', text: 'Tick vào ô đồng ý để ra ngồi nhé.' });
     const v = validateCandidateInput(build());
     if (!v.ok) return setErr({ field: v.field, text: errorMessage(v.error, v.field) });
+    inflight.current = true;
     setBusy(true);
     setErr(null);
-    const r = await backend.saveMyCandidate(v.value as CandidateInput);
+    const r = await backend.saveMyCandidate(v.value as CandidateInput).finally(() => {
+      inflight.current = false;
+    });
     setBusy(false);
     if (!r.ok) return setErr({ field: r.field ?? '', text: errorMessage(r.error, r.field) });
     await refreshMe();

@@ -19,7 +19,15 @@ export function InviteForm({ id }: { id: string }) {
   const [contact, setContact] = useState('');
   const [err, setErr] = useState<{ field?: string; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  /** TOO_NEW: seconds until a new HR account may send a 500k (counts down) */
+  const [wait, setWait] = useState(0);
   const r = LIMITS.invite;
+
+  useEffect(() => {
+    if (wait <= 0) return;
+    const t = setInterval(() => setWait((w) => Math.max(0, w - 1)), 1000);
+    return () => clearInterval(t);
+  }, [wait > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     void backend?.getCandidate(id).then((c) => setName(c?.displayName ?? ''));
@@ -34,6 +42,7 @@ export function InviteForm({ id }: { id: string }) {
     const res = await backend.sendInvitation(id, message, contact);
     setBusy(false);
     if (!res.ok) {
+      if (res.error === 'TOO_NEW' && res.retryAfterSec) setWait(res.retryAfterSec);
       setErr({ field: res.field, text: errorMessage(res.error, res.field) });
       return;
     }
@@ -62,8 +71,13 @@ export function InviteForm({ id }: { id: string }) {
           {err?.field === 'hr_contact' && <em className="error">{err.text}</em>}
         </label>
         {err && !err.field && <em className="error">{err.text}</em>}
+        {wait > 0 && (
+          <p className="notice" role="status">
+            Còn {Math.floor(wait / 60)}:{String(wait % 60).padStart(2, '0')} nữa bạn mới thả được 500k.
+          </p>
+        )}
         <div className="actions">
-          <button className="btn accent" disabled={busy}>{busy ? 'Đang thả...' : 'Thả 500k'}</button>
+          <button className="btn accent" disabled={busy || wait > 0}>{busy ? 'Đang thả...' : 'Thả 500k'}</button>
           <button type="button" className="btn ghost" onClick={() => setPanel({ kind: 'candidate', id })}>Quay lại</button>
         </div>
       </form>

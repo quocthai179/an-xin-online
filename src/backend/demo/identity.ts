@@ -2,6 +2,8 @@ import type { KeyValueStore } from './db';
 
 export const USERS_KEY = 'pxv:demo:users';
 export const SESSION_UID_KEY = 'pxv:uid';
+/** set by "Đổi người (demo)": the next claim in this tab must create a brand-new user instead of re-adopting a stored one */
+export const SESSION_FRESH_KEY = 'pxv:fresh';
 
 export interface IdentityLocks {
   /** Try to take a lock held for the lifetime of the tab. Resolves false if someone else holds it. */
@@ -89,6 +91,13 @@ async function claimLocked(deps: IdentityDeps, as?: string | null): Promise<stri
     return remember(id);
   }
 
+  if (session.get(SESSION_FRESH_KEY) === '1') {
+    session.remove(SESSION_FRESH_KEY);
+    const id = deps.newId();
+    await locks.tryHold(`pxv:id:${id}`);
+    return remember(id);
+  }
+
   const sessionId = session.get(SESSION_UID_KEY);
   if (sessionId && (await locks.tryHold(`pxv:id:${sessionId}`))) return remember(sessionId);
 
@@ -103,4 +112,5 @@ async function claimLocked(deps: IdentityDeps, as?: string | null): Promise<stri
 /** "Đổi người (demo)": next load of this tab becomes another user. */
 export function forgetSessionIdentity(session: KeyValueStore): void {
   session.remove(SESSION_UID_KEY);
+  session.set(SESSION_FRESH_KEY, '1');
 }
