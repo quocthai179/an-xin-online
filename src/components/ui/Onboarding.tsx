@@ -114,7 +114,10 @@ export function Onboarding({ initial, onDone }: { initial?: Me['profile']; onDon
 
       <label className="check">
         <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-        <span>Mình từ 16 tuổi trở lên và hiểu đây là trò chơi, xu chỉ là xu ảo.</span>
+        <span>
+          Mình từ 16 tuổi trở lên và hiểu đây là trò chơi, xu chỉ là xu ảo. (
+          <a href="/terms" target="_blank" rel="noopener">Điều khoản</a>)
+        </span>
       </label>
       {err?.field === 'agree' && <em className="error">{err.text}</em>}
       {err && !['display_name', 'company', 'agree'].includes(err.field ?? '') && <em className="error">{err.text}</em>}

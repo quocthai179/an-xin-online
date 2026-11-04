@@ -11,6 +11,7 @@ import { input } from '@/state/input';
 import { useWorld } from '@/state/world';
 import { boardGeometry, bowlGeometry, headGeometry, hatGeometry, seatedLegs, seatedTorso, SIGN, type HatKind } from '@/scene-lib/geometry/avatar';
 import { BOWL_COLOR, PANTS, pick, SHIRT, SKIN } from '@/scene-lib/palette';
+import { loadSceneFonts } from '@/scene-lib/capability';
 import { buildSeatList, sceneData, type SeatInfo } from '@/scene-lib/sceneData';
 import { drawSign } from '@/scene-lib/signTexture';
 import { TextureCache } from '@/scene-lib/textureCache';
@@ -158,7 +159,7 @@ export function NearbySigns({ mobile }: { mobile: boolean }) {
 
   useEffect(() => {
     let alive = true;
-    void document.fonts?.ready.then(() => {
+    void loadSceneFonts().then(() => {
       if (alive) epoch.current++;
     });
     return () => {

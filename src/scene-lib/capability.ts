@@ -30,3 +30,12 @@ export function initialView(search: string): '2d' | '3d' {
 export function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
+
+/** Canvas text only uses a webfont once it is loaded; ask for the Vietnamese glyphs explicitly. */
+export function loadSceneFonts(): Promise<void> {
+  if (typeof document === 'undefined' || !document.fonts) return Promise.resolve();
+  const sample = 'Ấ ẩ ờ ữ đ';
+  return Promise.all([document.fonts.load('32px "Patrick Hand"', sample), document.fonts.load('700 28px "PXV Display"', sample)])
+    .then(() => undefined)
+    .catch(() => undefined);
+}

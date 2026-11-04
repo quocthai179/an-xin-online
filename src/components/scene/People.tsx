@@ -15,6 +15,7 @@ import { PANTS, pick, SHIRT, SKIN } from '@/scene-lib/palette';
 import { sceneData } from '@/scene-lib/sceneData';
 import { TextureCache } from '@/scene-lib/textureCache';
 import { prefersReducedMotion } from '@/scene-lib/capability';
+import { useFontsReady } from '@/hooks/useFontsReady';
 
 const RENDER_DELAY_MS = 120;
 const dummy = new Object3D();
@@ -260,6 +261,10 @@ export function Labels() {
     },
     [cache, sprites],
   );
+  const fontsReady = useFontsReady();
+  useEffect(() => {
+    if (fontsReady) cache.clear();
+  }, [fontsReady, cache]);
 
   useFrame((_, dt) => {
     acc.current += dt;

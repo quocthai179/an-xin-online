@@ -16,6 +16,8 @@ const csp = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // the OG routes read the vendored TTFs with fs at runtime
+  outputFileTracingIncludes: { '/api/og/**': ['./src/assets/fonts/*.ttf'] },
   async headers() {
     return [
       {

@@ -14,6 +14,8 @@ import { useSession } from '@/state/session';
 import { useUi } from '@/state/ui';
 import { useWorld } from '@/state/world';
 import { Modal } from './Modal';
+import { candidateSharePath } from '@/lib/shareData';
+import { ShareSheet } from './ShareSheet';
 import { SignCanvas } from './SignCanvas';
 
 const REPORT_REASONS: [ReportReason, string][] = [
@@ -253,16 +255,12 @@ export function CandidatePanel({ id }: { id: string }) {
             >
               🪔 Thắp nhang cầu job cho bạn này
             </button>
-            <button
-              className="btn small"
-              onClick={() => {
-                const url = `${window.location.origin}/?c=${c.slug}`;
-                if (navigator.share) void navigator.share({ title: `${c.displayName} đang ngồi ở Phố Xin Việc`, url }).catch(() => undefined);
-                else void navigator.clipboard?.writeText(url).then(() => toast({ tone: 'info', text: 'Đã copy link.' }));
-              }}
-            >
-              Chia sẻ
-            </button>
+            <ShareSheet
+              path={candidateSharePath(c)}
+              imagePath={candidateSharePath(c).replace('/c/', '/api/og/c/')}
+              title={`${c.displayName} đang ngồi ở Phố Xin Việc`}
+              text={`${c.displayName} đang ngồi ở Phố Xin Việc 3D: ${c.signText ?? ''}`}
+            />
             <button className="btn small ghost" disabled={!me || !!my?.reported} onClick={() => setReportOpen((v) => !v)}>
               {my?.reported ? 'Đã báo cáo' : 'Báo cáo'}
             </button>

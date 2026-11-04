@@ -15,6 +15,10 @@
   --font: 'Be Vietnam Pro', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
+@font-face { font-family: 'Patrick Hand'; src: url('/fonts/PatrickHand-vi.woff2') format('woff2'); font-display: swap; }
+/* display face (Be Vietnam Pro Bold, latin + vietnamese subset) for 3D labels and OG-like headings */
+@font-face { font-family: 'PXV Display'; src: url('/fonts/BeVietnamPro-Bold-vi.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
@@ -272,3 +276,25 @@ small { color: var(--ink2); }
 }
 .scene-hint { transition: opacity 1s; }
 .scene-hint.gone { opacity: 0; }
+
+/* landing / terms / not-found */
+.landing { width: min(720px, 100%); margin: 0 auto; padding: 32px 16px 64px; display: grid; gap: 12px; justify-items: start; }
+.landing-kicker { margin: 0; color: var(--brand); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; font-size: 0.85rem; }
+.landing h1 { font-size: 2rem; margin: 0; }
+.landing h2 { font-size: 1.15rem; margin: 14px 0 0; color: var(--brand); }
+.landing-sign {
+  width: 100%; padding: 28px 24px; background: #c99a62; border: 8px solid #8a6232; border-radius: 8px; transform: rotate(-1.5deg);
+  font-family: 'Patrick Hand', 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive; font-size: clamp(1.6rem, 6vw, 2.6rem); line-height: 1.15; text-align: center;
+  color: #2a1a0a; box-shadow: 6px 8px 0 rgba(42, 26, 10, 0.2); overflow-wrap: anywhere;
+}
+.landing-note { margin-top: 12px; }
+.landing .fortune { width: 100%; }
+.landing ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.terms p { margin: 0; }
+.share-sheet { display: inline-flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.share-pop { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; }
+.share-pop .btn { text-decoration: none; }
+.fortune h1 { font-size: 1.6rem; margin: 2px 0; }
+.landing a.btn { text-decoration: none; }
+.landing a { color: var(--brand); }
+.landing a.btn { color: var(--brand-ink); }

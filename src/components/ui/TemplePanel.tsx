@@ -8,7 +8,9 @@ import { playIncense, unlockAudio } from '@/audio/sfx';
 import { useSession } from '@/state/session';
 import { useUi } from '@/state/ui';
 import { useWorld } from '@/state/world';
+import { fortuneSharePath } from '@/lib/shareData';
 import { Modal } from './Modal';
+import { ShareSheet } from './ShareSheet';
 
 function FortuneCard({ f, day, name }: { f: Fortune; day: string; name: string }) {
   const toast = useUi((s) => s.toast);
@@ -33,7 +35,14 @@ function FortuneCard({ f, day, name }: { f: Fortune; day: string; name: string }
       <p>{f.verdict}</p>
       <p className="advice">Lời khuyên: {f.advice}</p>
       <p className="dim">{FORTUNE_DISCLAIMER}</p>
-      <button className="btn small" onClick={share}>Chia sẻ quẻ</button>
+      <button className="btn small" onClick={share}>Chép nội dung quẻ</button>
+      <ShareSheet
+        path={fortuneSharePath(f.id, name, day)}
+        imagePath={`/api/og/q/${f.id}?n=${encodeURIComponent(name)}&d=${day}`}
+        title={`Quẻ ${f.name}`}
+        text={`${name} xin được ${f.name} ở Phố Xin Việc 3D`}
+        label="Chia sẻ quẻ"
+      />
     </article>
   );
 }

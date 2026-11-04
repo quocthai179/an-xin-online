@@ -1,7 +1,7 @@
 // Canvas drawing helpers for 3D labels. Everything uses fillText (inert, never HTML).
 import { SIGN_FONT } from './signTexture';
 
-const UI_FONT = '"Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
+const UI_FONT = '"PXV Display", "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
 
 function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement('canvas');

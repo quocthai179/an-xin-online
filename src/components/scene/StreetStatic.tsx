@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { CanvasTexture, DoubleSide, type Mesh, MeshBasicMaterial, MeshLambertMaterial, type InstancedMesh, Object3D, SRGBColorSpace } from 'three';
+import { useFontsReady } from '@/hooks/useFontsReady';
 import { toRanked, useWorld } from '@/state/world';
 import { input } from '@/state/input';
 import { PLAZA, ZONE_LENGTH, zoneStartZ } from '@/lib/layout';
@@ -21,8 +22,9 @@ function texOf(canvas: HTMLCanvasElement): CanvasTexture {
 
 /** Canvas texture rebuilt whenever `key` changes; the old one is disposed. */
 function useCanvasTexture(make: () => HTMLCanvasElement, key: string): CanvasTexture {
+  const fonts = useFontsReady();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const tex = useMemo(() => texOf(make()), [key]);
+  const tex = useMemo(() => texOf(make()), [key, fonts]);
   useEffect(() => () => tex.dispose(), [tex]);
   return tex;
 }
