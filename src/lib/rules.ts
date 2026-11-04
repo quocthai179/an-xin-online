@@ -1,5 +1,5 @@
-// Single source of truth for business constants. Mirrored in supabase/migrations/0001_init.sql (private.cfg()).
-// tests/parity/sql-config.test.ts keeps both in sync.
+// Single source of truth for business constants. Mirrored in private.cfg() of the LATEST migration that defines it
+// (supabase/migrations/0002_hardening.sql). tests/parity/sql-config.test.ts keeps both in sync.
 
 export const TZ = 'Asia/Ho_Chi_Minh';
 export const ZONE_IDS = [
@@ -37,10 +37,27 @@ export const LIMITS = {
   zoneChangeHours: 24,
   nameChangeHours: 24,
   hrSignupsPerIpPerHour: 3,
-  reportsToHideSign: 3,
+  /** distinct counted reporters that auto-hide a sign (AC-20.2; raised from 3 by the 2026-11-04 security audit M2) */
+  reportsToHideSign: 5,
   reportsPerDay: 20,
   seatsPerZone: 30,
   rank: { halfLifeDays: 7, windowDays: 60, loveDailyCap: 20 },
+  /** reports from profiles younger than this are stored but not counted toward reportsToHideSign (anti-brigading) */
+  reporterMinAgeMinutes: 60,
+  /** no 500k within this many minutes after the profile became HR (TOO_NEW) */
+  hrInviteMinAgeMinutes: 10,
+  /** contact reveals per HR per hour (get_candidate_contact) */
+  contactViewsPerHour: 20,
+  profileUpdatesPerMinute: 5,
+  statusChangesPerMinute: 4,
+  /** candidate profile creations per user per VN day (delete + recreate cap) */
+  candidateCreatesPerDay: 3,
+  /** placed candidates stay on the street listing this many days after placed_at */
+  placedVisibleDays: 30,
+  /** max rows of list_candidates (sitting first, newest first) */
+  listMax: 3000,
+  /** rate-limit counters (incl. hashed IPs) are purged after this many hours */
+  rateRetentionHours: 25,
 } as const;
 
 export const FIELD_LIMITS = {

@@ -70,9 +70,10 @@ provision() {  # $1 = database name
   if [[ "$db" != "postgres" ]]; then q -U supabase_admin -d postgres -c "create database $db"; fi
   q -U supabase_admin -d "$db" -v DBNAME="$db" -f "$HERE/00_supabase_stub.sql" >"$OUT/stub-$db.log" 2>&1 \
     || { cat "$OUT/stub-$db.log"; return 1; }
+  : >"$OUT/migrate-$db.log"
   for m in "$ROOT"/supabase/migrations/*.sql; do
-    # migrations run as `postgres` (not superuser), like `supabase db push`
-    q -U postgres -d "$db" -f "$m" >"$OUT/migrate-$db.log" 2>&1 || { cat "$OUT/migrate-$db.log"; return 1; }
+    # migrations run as `postgres` (not superuser), one transaction per file, like `supabase db push`
+    q -1 -U postgres -d "$db" -f "$m" >>"$OUT/migrate-$db.log" 2>&1 || { cat "$OUT/migrate-$db.log"; return 1; }
   done
   if grep -E 'ERROR|WARNING' "$OUT/migrate-$db.log"; then echo "migration produced warnings/errors"; return 1; fi
   echo "   migrated $db: $(ls "$ROOT"/supabase/migrations/*.sql | wc -l) file(s) OK"

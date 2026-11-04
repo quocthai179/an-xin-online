@@ -22,12 +22,15 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   NOT_PENDING: 'Việc này đã được xử lý rồi.',
   ALREADY_DONE: 'Hôm nay làm rồi. Mai thắp tiếp nhé.',
   ALREADY_REPORTED: 'Bạn đã báo cáo người này rồi.',
-  CONTACT_LOCKED: 'Thả 500k để mở liên hệ.',
+  CONTACT_LOCKED: 'Liên hệ chỉ mở khi ứng viên đã nhận lời 500k của bạn.',
   VALIDATION: 'Thông tin chưa hợp lệ, kiểm tra lại giúp mình nhé.',
   BLOCKED_CONTENT: 'Nội dung có từ không phù hợp. Sửa lại cho lịch sự nhé.',
   PII_NOT_ALLOWED: 'Đừng ghi link, email, số điện thoại ở đây. Liên hệ có ô riêng.',
   NAME_CHANGE_COOLDOWN: 'Tên chỉ đổi được 1 lần mỗi ngày.',
   ZONE_CHANGE_COOLDOWN: 'Chỉ đổi khu được 1 lần mỗi 24 giờ.',
+  MODERATION_LOCKED: 'Hồ sơ đang chờ kiểm duyệt nên chưa ngồi lại phố được. Đợi admin xem xong nhé.',
+  BANNED: 'Tài khoản này đã bị khóa do vi phạm quy định của phố.',
+  TOO_NEW: 'Tài khoản HR mới tạo, đợi vài phút rồi hãy thả 500k nhé.',
   NETWORK: 'Mạng lag, thử lại nhé.',
 };
 

@@ -12,7 +12,7 @@ export function formatTickerLine(e: StreetEvent): string | null {
     case 'offer':
       return `HR ${e.giver.name}${e.giver.company ? ` @ ${e.giver.company}` : ''} vừa BAO TRỌN ${e.candidate.name} 🎉`;
     case 'placed':
-      return `${e.candidate.displayName} vừa được bao${e.company ? ` bởi ${e.company}` : ''}! 🎊`;
+      return `${e.name ?? e.candidate.displayName} vừa được bao${e.company ? ` bởi ${e.company}` : ''}! 🎊`;
     case 'incense':
       return `${e.name} vừa thắp nhang cầu job 🪔`;
     default:

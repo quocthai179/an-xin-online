@@ -34,7 +34,12 @@ export function contactHref(c: Contact): string | null {
   return toSafeHref(c.value);
 }
 
-/** Heuristic for HR contact in invitations: free text email / link / phone; just length-checked in SQL. */
+/** HR contact in invitations (0002): must look like an email, an http(s) URL or a phone number. Mirrors private.contact_ok. */
+export function looksLikeContact(v: string): boolean {
+  return EMAIL.test(v) || URL_RE.test(v) || PHONE.test(v);
+}
+
+/** Heuristic for HR contact in invitations: free text email / link / phone. */
 export function guessContactKind(v: string): Contact['kind'] {
   if (v.includes('@') && !/^https?:/i.test(v)) return 'email';
   if (/^https?:/i.test(v)) return 'url';

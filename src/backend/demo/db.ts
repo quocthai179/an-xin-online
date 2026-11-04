@@ -76,6 +76,8 @@ export interface UserRow {
   createdAt: number;
   nameChangedAt: number | null;
   isBot?: boolean;
+  /** when the profile (last) became HR (0002 TOO_NEW gate); absent in older demo DBs -> createdAt */
+  hrSince?: number | null;
 }
 
 export interface CandRow {
@@ -111,6 +113,8 @@ export interface CandRow {
   reportCount: number;
   createdAt: number;
   updatedAt: number;
+  /** admin hide = moderation lock (0002); absent in older demo DBs */
+  modHiddenAt?: number | null;
 }
 
 export interface GiftRow {
@@ -178,8 +182,11 @@ export interface DemoDb {
   offers: Record<string, OfferRow>;
   incense: { userId: string; day: string; target: string | null }[];
   notifications: NotifRow[];
-  reports: { reporterId: string; candidateId: string; reason: string; note: string | null; at: number }[];
+  reports: { reporterId: string; candidateId: string; reason: string; note: string | null; at: number; counted?: boolean }[];
   rate: Record<string, { bucket: number; n: number }>;
+  /** 0002 (optional so older persisted DBs stay valid): private.bans / private.candidate_tombstones */
+  bans?: Record<string, { reason: string | null; at: number }>;
+  tombstones?: Record<string, { signLocked: boolean; hideLocked: boolean; at: number }>;
 }
 
 export const DB_KEY = 'pxv:demo:db';
@@ -200,6 +207,8 @@ export function emptyDb(): DemoDb {
     notifications: [],
     reports: [],
     rate: {},
+    bans: {},
+    tombstones: {},
   };
 }
 

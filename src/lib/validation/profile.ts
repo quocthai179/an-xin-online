@@ -2,6 +2,7 @@ import type { ErrorCode, Role } from '@/backend/types';
 import { FIELD_LIMITS } from '../rules';
 import { clean } from '../moderation/normalize';
 import { isBlocked } from '../moderation/blocklist';
+import { hasPii } from '../moderation/pii';
 
 const len = (s: string) => [...s].length;
 
@@ -22,6 +23,7 @@ export function validateProfileInput(raw: {
     return { ok: false, error: 'VALIDATION', field: 'display_name' };
   }
   if (isBlocked(name)) return { ok: false, error: 'BLOCKED_CONTENT', field: 'display_name' };
+  if (hasPii(name)) return { ok: false, error: 'PII_NOT_ALLOWED', field: 'display_name' };
   if (role !== 'hr' && role !== 'candidate' && role !== 'viewer') return { ok: false, error: 'VALIDATION', field: 'role' };
   let company: string | null = null;
   if (role === 'hr') {
@@ -30,6 +32,7 @@ export function validateProfileInput(raw: {
       return { ok: false, error: 'VALIDATION', field: 'company' };
     }
     if (isBlocked(company)) return { ok: false, error: 'BLOCKED_CONTENT', field: 'company' };
+    if (hasPii(company)) return { ok: false, error: 'PII_NOT_ALLOWED', field: 'company' };
   }
   return { ok: true, value: { displayName: name, role, company } };
 }

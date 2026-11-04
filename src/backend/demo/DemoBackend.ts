@@ -138,7 +138,7 @@ export class DemoBackend implements Backend {
     return this.tx((db, ctx) => engine.deleteMyCandidate(db, ctx));
   }
   async getCandidateContact(candidateId: string): Promise<Result<Contact>> {
-    return this.read((db) => engine.getCandidateContact(db, this.uid, candidateId));
+    return this.tx((db, ctx) => engine.getCandidateContact(db, ctx, candidateId)); // rate-limited (writes db.rate)
   }
 
   // ----- actions -----

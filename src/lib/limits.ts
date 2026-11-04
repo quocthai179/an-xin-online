@@ -2,8 +2,9 @@ import type { ErrorCode, GiftKind, Role } from '@/backend/types';
 import { LIMITS } from './rules';
 import { isBlocked } from './moderation/blocklist';
 import { clean } from './moderation/normalize';
+import { looksLikeContact } from './validation/contact';
 
-export type Check = { error: ErrorCode; field?: string } | null;
+export type Check = { error: ErrorCode; field?: string; retryAfterSec?: number } | null;
 
 const len = (s: string) => [...s].length;
 
@@ -45,6 +46,8 @@ export interface InviteCtx {
   inCooldown: boolean;
   dayCount: number;
   candidateOpen: number;
+  /** ms since the profile (last) became HR; undefined = old enough (0002 TOO_NEW gate) */
+  hrAgeMs?: number;
 }
 
 /** Same check order as public.send_invitation. */
@@ -52,6 +55,8 @@ export function checkInvite(c: InviteCtx): Check {
   const r = LIMITS.invite;
   if (!c.hasProfile) return { error: 'NO_PROFILE' };
   if (c.role !== 'hr') return { error: 'WRONG_ROLE' };
+  const minAge = LIMITS.hrInviteMinAgeMinutes * 60_000;
+  if (c.hrAgeMs !== undefined && c.hrAgeMs < minAge) return { error: 'TOO_NEW', retryAfterSec: Math.ceil((minAge - c.hrAgeMs) / 1000) };
   if (!c.candidateFound) return { error: 'NOT_FOUND' };
   if (c.candidateStatus !== 'sitting') return { error: 'CANDIDATE_UNAVAILABLE' };
   if (c.candidateIsSample) return { error: 'SAMPLE_CANDIDATE' };
@@ -59,9 +64,10 @@ export function checkInvite(c: InviteCtx): Check {
     return { error: 'VALIDATION', field: 'message' };
   }
   if (isBlocked(c.message)) return { error: 'BLOCKED_CONTENT', field: 'message' };
-  if (c.contact === null || len(c.contact) < r.contactMin || len(c.contact) > r.contactMax) {
+  if (c.contact === null || len(c.contact) < r.contactMin || len(c.contact) > r.contactMax || !looksLikeContact(c.contact)) {
     return { error: 'VALIDATION', field: 'hr_contact' };
   }
+  if (isBlocked(c.contact)) return { error: 'BLOCKED_CONTENT', field: 'hr_contact' };
   if (c.openPair) return { error: 'INVITE_ALREADY_OPEN' };
   if (c.inCooldown) return { error: 'INVITE_COOLDOWN' };
   if (c.dayCount >= r.perDay) return { error: 'LIMIT_DAILY' };

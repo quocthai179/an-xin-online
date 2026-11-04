@@ -50,9 +50,9 @@ begin
   perform tests.eq(v->>'hr_company', 'Tôm Corp', 'snapshot company');
   perform tests.check((v->>'expires_at')::timestamptz = now() + interval '14 days', 'expires in 14 days');
   perform tests.err(public.send_invitation(c, msg, 'hr@tom.vn'), 'INVITE_ALREADY_OPEN', 'second open invite same pair');
-  -- contact unlocked now
-  v := tests.ok(public.get_candidate_contact(c), 'contact after 500k');
-  perform tests.eq(v->>'value', 'me@example.com', 'hr sees contact');
+  -- 0002 (sec H1): a PENDING 500k does not unlock the contact any more; accepted ones do (tested in 80_contact_gate.sql)
+  perform tests.err(public.get_candidate_contact(c), 'CONTACT_LOCKED', 'contact still locked while pending');
+  perform tests.eq((public.get_candidate(c::text)->'me'->>'can_see_contact')::boolean, false, 'can_see_contact false while pending');
   perform tests.eq((public.get_candidate(c::text)->'me'->>'open_invite')::boolean, true, 'me.open_invite');
   perform tests.logout();
   -- other HR still locked
@@ -67,7 +67,7 @@ begin
   perform tests.check(exists (select 1 from realtime.messages where topic = 'inbox:' || cu::text
                                and payload->>'type' = 'invite_received' and payload->'payload'->>'hrContact' = 'hr@tom.vn'),
                       'candidate inbox has invite with contact');
-  perform tests.pass('send_invitation + contact unlock');
+  perform tests.pass('send_invitation (contact stays locked while pending)');
 
   -- RLS: parties see the invitation, others don't
   perform tests.login(cu);

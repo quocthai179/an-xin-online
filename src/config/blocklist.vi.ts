@@ -1,5 +1,7 @@
 // DATA ONLY. One entry per line: `term|mode` (modes: exact | loose | compact).
-// Mirrored by hand in supabase/migrations/0001_init.sql (BEGIN:BLOCKLIST_SQL); tests/parity keeps both in sync.
+// Mirrored by hand in supabase/migrations/*.sql (every BEGIN:BLOCKLIST_SQL block, unioned); tests/parity keeps both in sync.
+// Modes: exact = diacritic-sensitive token (use for words whose unaccented form is a normal word: cặc/các, lồn/lớn, buồi/buổi),
+//        loose = unaccented/leet token, compact = substring of the loose form without spaces (long distinctive terms only).
 export type BlockMode = 'exact' | 'loose' | 'compact';
 
 export const BLOCKLIST = String.raw`
@@ -30,6 +32,23 @@ stk ngan hang|loose
 casino|loose
 nhacai|compact
 kiemtienonline|compact
+# 0002_hardening: common variants and scam phrases
+loz|loose
+cak|loose
+cặk|exact
+djt|loose
+dkm|loose
+vcc|loose
+clgt|loose
+óc chó|exact
+buoi|exact
+fuck|loose
+fck|loose
+shit|loose
+bitch|loose
+viecnheluongcao|compact
+congtacvienonline|compact
+naptiennhanviec|compact
 `;
 
 export function parseBlocklist(raw: string): { term: string; mode: BlockMode }[] {

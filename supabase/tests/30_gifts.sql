@@ -152,8 +152,9 @@ begin
   perform tests.login(hr2);
   perform tests.ok(public.drop_gift(cands[6], 'xu'), 'xu to hidden-ticker cand');
   perform tests.logout();
+  -- 0002 (sec L1): no candidate id / zone in the street event either
   perform tests.check(exists (select 1 from realtime.messages where topic = 'street' and event = 'gift'
-      and payload->'candidate'->>'id' = cands[6]::text and payload->'candidate'->>'name' = 'một bạn ẩn danh'), 'ticker anonymised');
+      and payload->'candidate' = '{"name": "một bạn ẩn danh"}'::jsonb and not (payload::text like '%' || cands[6]::text || '%')), 'ticker anonymised');
   perform tests.pass('hide_from_ticker');
 end $$;
 rollback;

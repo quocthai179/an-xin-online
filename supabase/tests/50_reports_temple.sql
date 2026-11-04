@@ -6,7 +6,7 @@ declare
   c uuid; cu uuid; r uuid[] := '{}'; i int; v jsonb; v2 jsonb; u uuid; u2 uuid; s uuid; n int;
 begin
   c := tests.mk_candidate('Ứng Viên Bị Báo', 'design'); cu := tests.cand_user(c);
-  for i in 1..4 loop r := r || tests.mk_profile('Người Báo ' || i, 'viewer'); end loop;
+  for i in 1..6 loop r := r || tests.mk_profile('Người Báo ' || i, 'viewer'); end loop;   -- aged 2 h (count)
   delete from realtime.messages;
 
   -- ---------- reports ----------
@@ -28,13 +28,16 @@ begin
   perform tests.login(r[2]); perform tests.ok(public.report_candidate(c, 'harassment'), 'report 2'); perform tests.logout();
   perform tests.eq((select sign_state::text from public.candidates where id = c), 'ok', 'still visible at 2');
   perform tests.login(r[3]); perform tests.ok(public.report_candidate(c, 'other'), 'report 3'); perform tests.logout();
-  perform tests.eq((select sign_state::text from public.candidates where id = c), 'pending_review', 'auto-hide at 3 distinct reporters');
+  perform tests.login(r[4]); perform tests.ok(public.report_candidate(c, 'other'), 'report 4'); perform tests.logout();
+  perform tests.eq((select sign_state::text from public.candidates where id = c), 'ok', 'still visible at 4 (0002: threshold 5)');
+  perform tests.login(r[5]); perform tests.ok(public.report_candidate(c, 'other'), 'report 5'); perform tests.logout();
+  perform tests.eq((select sign_state::text from public.candidates where id = c), 'pending_review', 'auto-hide at 5 distinct reporters');
   perform tests.check(exists (select 1 from realtime.messages where topic = 'inbox:' || cu::text and payload->>'type' = 'sign_hidden'),
                       'owner notified sign_hidden');
   perform tests.check(exists (select 1 from realtime.messages where topic = 'street' and event = 'candidate_upsert'
                                and payload->'candidate'->>'id' = c::text and payload->'candidate'->'sign_text' = 'null'::jsonb),
                       'street upsert with hidden sign');
-  perform tests.login(r[4]); perform tests.ok(public.report_candidate(c, 'other'), 'report 4'); perform tests.logout();
+  perform tests.login(r[6]); perform tests.ok(public.report_candidate(c, 'other'), 'report 6'); perform tests.logout();
   perform tests.eq((select count(*) from realtime.messages where topic = 'inbox:' || cu::text and payload->>'type' = 'sign_hidden')::int, 1,
                    'sign_hidden only once');
   perform tests.login_anon();
@@ -48,7 +51,7 @@ begin
   perform tests.ok(public.upsert_my_candidate(tests.cand_payload('design', 'Biển mới sạch sẽ')), 'edit after hide');
   perform tests.logout();
   perform tests.eq((select sign_state::text from public.candidates where id = c), 'pending_review', 'edit keeps pending_review');
-  perform tests.pass('reports: dedupe + auto-hide at 3');
+  perform tests.pass('reports: dedupe + auto-hide at 5');
 
   -- reports per day (20)
   perform tests.reset_rate();

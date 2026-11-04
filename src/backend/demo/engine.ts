@@ -1,4 +1,5 @@
-// "Stored procedures" in TS. Same check order and error codes as supabase/migrations/0001_init.sql.
+// "Stored procedures" in TS. Same check order and error codes as supabase/migrations/0001_init.sql + 0002_hardening.sql
+// (the latest CREATE OR REPLACE of each function wins).
 import type {
   Actor, AppNotification, AvatarSpec, CandidateCard, CandidateDetail, CandidateInput, CandRef, Contact, ErrorCode,
   FortuneDraw, GiftKind, Invitation, Me, NotificationType, Offer, Profile, ReportReason, Result, StreetEvent,
@@ -45,15 +46,27 @@ function fail<T = never>(c: NonNullable<Check> | { error: ErrorCode; field?: str
   return { res: r, emits };
 }
 
-/** Fixed-window counter (mirror of private.hit). Returns true while within max. */
-export function hit(db: DemoDb, key: string, windowMs: number, max: number, now: number): boolean {
-  const bucket = Math.floor(now / windowMs) * windowMs;
+/** Counter for an explicit window start (mirror of private.hit_at), incl. the rateRetentionHours purge. */
+function hitAt(db: DemoDb, key: string, bucket: number, max: number, now: number): boolean {
   const cur = db.rate[key];
   if (!cur || cur.bucket !== bucket) db.rate[key] = { bucket, n: 1 };
   else cur.n += 1;
-  for (const k of Object.keys(db.rate)) if (db.rate[k].bucket < now - 2 * DAY_MS) delete db.rate[k];
-  return db.rate[key].n <= max;
+  const n = db.rate[key].n;
+  for (const k of Object.keys(db.rate)) if (db.rate[k].bucket < now - LIMITS.rateRetentionHours * HOUR_MS) delete db.rate[k];
+  return n <= max;
 }
+
+/** Fixed-window counter aligned to the UTC epoch (mirror of private.hit). Returns true while within max. */
+export function hit(db: DemoDb, key: string, windowMs: number, max: number, now: number): boolean {
+  return hitAt(db, key, Math.floor(now / windowMs) * windowMs, max, now);
+}
+
+/** One window per Vietnam calendar day (mirror of private.hit_day). */
+export function hitDay(db: DemoDb, key: string, max: number, now: number): boolean {
+  return hitAt(db, key, Date.parse(`${vnDay(now)}T00:00:00+07:00`), max, now);
+}
+
+const isBanned = (db: DemoDb, uid: string) => !!db.bans?.[uid];
 
 function street(e: StreetEvent): Emit {
   return { topic: TOPIC_STREET, event: e.type, payload: e };
@@ -79,7 +92,8 @@ function tickerName(c: CandRow) {
   return c.hideFromTicker ? 'một bạn ẩn danh' : c.displayName;
 }
 const actorOf = (u: UserRow): Actor => ({ id: u.id, name: u.displayName, role: u.role, company: u.company });
-const refOf = (c: CandRow): CandRef => ({ id: c.id, name: tickerName(c), zone: c.zone });
+/** private.cand_ref: hide_from_ticker -> anonymous name only (SQL omits id/zone; sec L1). */
+const refOf = (c: CandRow): CandRef => (c.hideFromTicker ? { id: '', name: tickerName(c), zone: null } : { id: c.id, name: tickerName(c), zone: c.zone });
 
 export function cardOf(db: DemoDb, c: CandRow, now: number): CandidateCard {
   const today = vnDay(now);
@@ -114,6 +128,18 @@ function lightCard(db: DemoDb, c: CandRow, now: number): Omit<CandidateCard, 'de
   const { decayed: _d, xuWeek: _w, xuToday: _t, ...rest } = cardOf(db, c, now);
   void _d; void _w; void _t;
   return rest;
+}
+
+/** Comparable snapshot of the broadcast card (private.card_json): no-op updates are not broadcast (sec H3). */
+function cardKey(db: DemoDb, c: CandRow, now: number): string {
+  return JSON.stringify({ ...lightCard(db, c, now), status: c.status });
+}
+
+/** private.emit_card: visible -> candidate_upsert, hidden -> candidate_remove (review M2). */
+function emitCard(db: DemoDb, c: CandRow, now: number): Emit {
+  return c.status === 'sitting' || c.status === 'placed'
+    ? street({ type: 'candidate_upsert', candidate: lightCard(db, c, now), at: iso(now) })
+    : street({ type: 'candidate_remove', id: c.id, at: iso(now) });
 }
 
 function invDto(i: InvRow): Invitation {
@@ -167,12 +193,16 @@ export function upsertProfile(
 ): Out<UserRow> {
   const uid = ctx.uid;
   if (!uid) return fail({ error: 'UNAUTHENTICATED' });
+  if (isBanned(db, uid)) return fail({ error: 'BANNED' });
   const v = validateProfileInput(input);
   if (!v.ok) return fail({ error: v.error, field: v.field });
   const old = db.users[uid];
   if (old && old.displayName !== v.value.displayName && old.nameChangedAt !== null &&
       old.nameChangedAt > ctx.now - LIMITS.nameChangeHours * HOUR_MS) {
     return fail({ error: 'NAME_CHANGE_COOLDOWN', field: 'display_name' });
+  }
+  if (!hit(db, `prof_upd:${uid}`, 60_000, LIMITS.profileUpdatesPerMinute, ctx.now)) {
+    return fail({ error: 'RATE_LIMITED', retryAfterSec: 60 });
   }
   const emits: Emit[] = [];
   const row: UserRow = {
@@ -184,17 +214,19 @@ export function upsertProfile(
     createdAt: old?.createdAt ?? ctx.now,
     nameChangedAt: old && old.displayName !== v.value.displayName ? ctx.now : (old?.nameChangedAt ?? null),
     isBot: old?.isBot,
+    hrSince: v.value.role !== 'hr' ? null : old?.role === 'hr' ? (old.hrSince ?? old.createdAt) : ctx.now,
   };
   db.users[uid] = row;
   const cand = candOfUser(db, uid);
   if (cand) {
+    const before = cardKey(db, cand, ctx.now);
     cand.displayName = row.displayName;
     cand.avatar = row.avatar;
     cand.updatedAt = ctx.now;
     if (row.role !== 'candidate' && cand.status === 'sitting') {
       cand.status = 'hidden'; // A3: role switch hides the profile
       emits.push(street({ type: 'candidate_remove', id: cand.id, at: iso(ctx.now) }));
-    } else if (cand.status === 'sitting') {
+    } else if (cand.status === 'sitting' && cardKey(db, cand, ctx.now) !== before) {
       emits.push(street({ type: 'candidate_upsert', candidate: lightCard(db, cand, ctx.now), at: iso(ctx.now) }));
     }
   }
@@ -205,6 +237,7 @@ export function upsertProfile(
 export function upsertMyCandidate(db: DemoDb, ctx: Ctx, input: CandidateInput): Out<{ id: string; slug: string }> {
   const uid = ctx.uid;
   if (!uid) return fail({ error: 'UNAUTHENTICATED' });
+  if (isBanned(db, uid)) return fail({ error: 'BANNED' });
   const prof = db.users[uid];
   if (!prof) return fail({ error: 'NO_PROFILE' });
   if (prof.role !== 'candidate') return fail({ error: 'WRONG_ROLE' });
@@ -219,20 +252,26 @@ export function upsertMyCandidate(db: DemoDb, ctx: Ctx, input: CandidateInput): 
     if (!hit(db, `cand_create:${uid}`, 10 * 60_000, LIMITS.profileCreatePer10Min, ctx.now)) {
       return fail({ error: 'RATE_LIMITED', retryAfterSec: 600 });
     }
+    if (!hitDay(db, `cand_create_day:${uid}`, LIMITS.candidateCreatesPerDay, ctx.now)) return fail({ error: 'RATE_LIMITED' });
   } else if (!hit(db, `cand_edit:${uid}`, HOUR_MS, LIMITS.signEditsPerHour, ctx.now)) {
     return fail({ error: 'RATE_LIMITED', retryAfterSec: 3600 });
   }
   let c: CandRow;
+  const before = old ? cardKey(db, old, ctx.now) : null;
   if (!old) {
+    const tomb = db.tombstones?.[uid]; // M1: moderation state survives delete + recreate
+    if (tomb) delete db.tombstones![uid];
     const id = ctx.newId();
     c = {
       id, userId: uid, slug: slugFor(id), isSample: false, displayName: prof.displayName, zone: val.zone,
       signText: val.signText, title: val.title, yearsExp: val.yearsExp, skills: val.skills,
       salaryMin: val.salaryMin ?? null, salaryMax: val.salaryMax ?? null, salaryNegotiable: val.salaryNegotiable,
-      city: val.city ?? null, workModes: val.workModes, bio: val.bio ?? null, avatar: prof.avatar, status: 'sitting',
-      signState: 'ok', hideFromTicker: val.hideFromTicker, showSalaryOnCard: val.showSalaryOnCard,
+      city: val.city ?? null, workModes: val.workModes, bio: val.bio ?? null, avatar: prof.avatar,
+      status: tomb?.hideLocked ? 'hidden' : 'sitting', signState: tomb?.signLocked ? 'pending_review' : 'ok',
+      hideFromTicker: val.hideFromTicker, showSalaryOnCard: val.showSalaryOnCard,
       sittingSince: ctx.now, zoneChangedAt: null, placedAt: null, placedCompany: null, xuTotal: 0, loveTotal: 0,
       inviteTotal: 0, incenseTotal: 0, reportCount: 0, createdAt: ctx.now, updatedAt: ctx.now,
+      modHiddenAt: tomb?.hideLocked ? ctx.now : null,
     };
     db.candidates[id] = c;
   } else {
@@ -246,7 +285,7 @@ export function upsertMyCandidate(db: DemoDb, ctx: Ctx, input: CandidateInput): 
     });
   }
   db.contacts[c.id] = val.contact;
-  const emits = c.status === 'sitting'
+  const emits = c.status === 'sitting' && (before === null || cardKey(db, c, ctx.now) !== before)
     ? [street({ type: 'candidate_upsert', candidate: lightCard(db, c, ctx.now), at: iso(ctx.now) })]
     : [];
   return done({ id: c.id, slug: c.slug }, emits);
@@ -257,6 +296,12 @@ export function setMyCandidateStatus(db: DemoDb, ctx: Ctx, s: 'sitting' | 'hidde
   if (s !== 'sitting' && s !== 'hidden') return fail({ error: 'VALIDATION', field: 'status' });
   const c = candOfUser(db, ctx.uid);
   if (!c) return fail({ error: 'NOT_FOUND' });
+  if (s === 'sitting' && ((c.modHiddenAt ?? null) !== null || c.signState !== 'ok')) return fail({ error: 'MODERATION_LOCKED' });
+  if (!hit(db, `cand_status:${ctx.uid}`, 60_000, LIMITS.statusChangesPerMinute, ctx.now)) {
+    return fail({ error: 'RATE_LIMITED', retryAfterSec: 60 });
+  }
+  const oldStatus = c.status;
+  const before = cardKey(db, c, ctx.now);
   if (s === 'sitting' && c.status !== 'sitting') {
     c.sittingSince = ctx.now;
     c.placedAt = null;
@@ -265,16 +310,19 @@ export function setMyCandidateStatus(db: DemoDb, ctx: Ctx, s: 'sitting' | 'hidde
   c.status = s;
   c.updatedAt = ctx.now;
   const at = iso(ctx.now);
-  return done(
-    { status: c.status },
-    [s === 'sitting' ? street({ type: 'candidate_upsert', candidate: lightCard(db, c, ctx.now), at }) : street({ type: 'candidate_remove', id: c.id, at })],
-  );
+  const emits: Emit[] = [];
+  if (s === 'sitting') {
+    if (oldStatus !== 'sitting' || cardKey(db, c, ctx.now) !== before) {
+      emits.push(street({ type: 'candidate_upsert', candidate: lightCard(db, c, ctx.now), at }));
+    }
+  } else if (oldStatus !== 'hidden') {
+    emits.push(street({ type: 'candidate_remove', id: c.id, at }));
+  }
+  return done({ status: c.status }, emits);
 }
 
-export function deleteMyCandidate(db: DemoDb, ctx: Ctx): Out<void> {
-  if (!ctx.uid) return fail({ error: 'UNAUTHENTICATED' });
-  const c = candOfUser(db, ctx.uid);
-  if (!c) return fail({ error: 'NOT_FOUND' });
+/** delete from candidates + its ON DELETE CASCADE children */
+function purgeCandidate(db: DemoDb, c: CandRow): void {
   delete db.candidates[c.id];
   delete db.contacts[c.id];
   delete db.daily[c.id];
@@ -282,15 +330,40 @@ export function deleteMyCandidate(db: DemoDb, ctx: Ctx): Out<void> {
   db.reports = db.reports.filter((r) => r.candidateId !== c.id);
   for (const [k, i] of Object.entries(db.invitations)) if (i.candidateId === c.id) delete db.invitations[k];
   for (const [k, o] of Object.entries(db.offers)) if (o.candidateId === c.id) delete db.offers[k];
-  return done(undefined, [street({ type: 'candidate_remove', id: c.id, at: iso(ctx.now) })]);
+}
+
+export function deleteMyCandidate(db: DemoDb, ctx: Ctx): Out<void> {
+  if (!ctx.uid) return fail({ error: 'UNAUTHENTICATED' });
+  const c = candOfUser(db, ctx.uid);
+  if (!c) return fail({ error: 'NOT_FOUND' });
+  const hideLocked = (c.modHiddenAt ?? null) !== null;
+  if (c.signState !== 'ok' || hideLocked) {
+    const t = db.tombstones?.[ctx.uid];
+    (db.tombstones ??= {})[ctx.uid] = {
+      signLocked: (t?.signLocked ?? false) || c.signState !== 'ok', hideLocked: (t?.hideLocked ?? false) || hideLocked, at: ctx.now,
+    };
+  }
+  purgeCandidate(db, c);
+  return done(undefined, c.status !== 'hidden' ? [street({ type: 'candidate_remove', id: c.id, at: iso(ctx.now) })] : []);
 }
 
 // ---------- reads ----------
+/** Mirror of list_candidates: sitting + recently placed; the listMax cut keeps sitting first, newest first. */
 export function listCandidates(db: DemoDb, now: number): CandidateCard[] {
+  const placedSince = now - LIMITS.placedVisibleDays * DAY_MS;
   return Object.values(db.candidates)
-    .filter((c) => c.status === 'sitting' || c.status === 'placed')
+    .filter((c) => c.status === 'sitting' || (c.status === 'placed' && (c.placedAt ?? c.updatedAt) >= placedSince))
+    .sort((a, b) => Number(b.status === 'sitting') - Number(a.status === 'sitting') || b.createdAt - a.createdAt || (a.id < b.id ? -1 : 1))
+    .slice(0, LIMITS.listMax)
     .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1))
     .map((c) => cardOf(db, c, now));
+}
+
+/** H1/L5: contact unlocks for the owner, or for a caller who is (still) HR with an ACCEPTED invitation. */
+function canSeeContact(db: DemoDb, uid: string, c: CandRow): boolean {
+  if (c.userId === uid) return true;
+  return db.users[uid]?.role === 'hr' &&
+    Object.values(db.invitations).some((i) => i.hrId === uid && i.candidateId === c.id && i.status === 'accepted');
 }
 
 export function getCandidate(db: DemoDb, uid: string | null, key: string, now: number): CandidateDetail | null {
@@ -309,7 +382,7 @@ export function getCandidate(db: DemoDb, uid: string | null, key: string, now: n
       lastInviteAt: invs.length ? iso(Math.max(...invs.map((i) => i.createdAt))) : null,
       openInvite: invs.some((i) => i.status === 'pending' && i.expiresAt > now),
       acceptedInviteId: accepted?.id ?? null,
-      canSeeContact: c.userId === uid || invs.length > 0,
+      canSeeContact: canSeeContact(db, uid, c),
       reported: db.reports.some((r) => r.reporterId === uid && r.candidateId === c.id),
     };
   }
@@ -330,16 +403,19 @@ export function getCandidate(db: DemoDb, uid: string | null, key: string, now: n
   };
 }
 
-export function getCandidateContact(db: DemoDb, uid: string | null, candidateId: string): Result<Contact> {
-  if (!uid) return { ok: false, error: 'UNAUTHENTICATED' };
+/** Mutates (rate limit), so DemoBackend runs it as a transaction. */
+export function getCandidateContact(db: DemoDb, ctx: Ctx, candidateId: string): Out<Contact> {
+  const uid = ctx.uid;
+  if (!uid) return fail({ error: 'UNAUTHENTICATED' });
   const c = db.candidates[candidateId];
-  if (!c) return { ok: false, error: 'NOT_FOUND' };
-  if (c.userId !== uid && !Object.values(db.invitations).some((i) => i.hrId === uid && i.candidateId === candidateId)) {
-    return { ok: false, error: 'CONTACT_LOCKED' }; // BR-Privacy
+  if (!c) return fail({ error: 'NOT_FOUND' });
+  if (c.userId !== uid) {
+    if (!canSeeContact(db, uid, c)) return fail({ error: 'CONTACT_LOCKED' }); // BR-Privacy
+    if (!hit(db, `contact:${uid}`, HOUR_MS, LIMITS.contactViewsPerHour, ctx.now)) return fail({ error: 'RATE_LIMITED', retryAfterSec: 3600 });
   }
   const contact = db.contacts[candidateId];
-  if (!contact) return { ok: false, error: 'NOT_FOUND' };
-  return { ok: true, data: contact };
+  if (!contact) return fail({ error: 'NOT_FOUND' });
+  return done(contact);
 }
 
 export function getMe(db: DemoDb, uid: string | null, now: number): Me | null {
@@ -388,7 +464,9 @@ export function dropGift(
   const mine = db.gifts.filter((g) => g.giverId === uid && g.kind === kind && g.day === today);
   const pair = mine.filter((g) => g.candidateId === candidateId).length;
   const ops = hit(db, `gift_s:${uid}`, 1000, LIMITS.giftOpsPerSecond, ctx.now) ? 1 : LIMITS.giftOpsPerSecond + 1;
-  const late = checkGift({ ...base, opsLastSecond: ops, pairToday: pair, dayToday: mine.length });
+  // DEMO ONLY (review M3): seeded bot HRs keep the ticker alive, so they skip the daily quotas (no SQL counterpart)
+  const bot = !!prof.isBot;
+  const late = checkGift({ ...base, opsLastSecond: ops, pairToday: bot ? 0 : pair, dayToday: bot ? 0 : mine.length });
   if (late) return fail(late.error === 'RATE_LIMITED' ? { ...late, retryAfterSec: 1 } : late);
 
   const rule = LIMITS[kind];
@@ -413,6 +491,7 @@ export function dropGift(
 export function sendInvitation(db: DemoDb, ctx: Ctx, candidateId: string, message: string, hrContact: string): Out<Invitation> {
   const uid = ctx.uid;
   if (!uid) return fail({ error: 'UNAUTHENTICATED' });
+  if (isBanned(db, uid)) return fail({ error: 'BANNED' });
   const prof = db.users[uid];
   const cand = db.candidates[candidateId];
   const r = LIMITS.invite;
@@ -426,6 +505,7 @@ export function sendInvitation(db: DemoDb, ctx: Ctx, candidateId: string, messag
     inCooldown: mineAll.some((i) => i.createdAt > ctx.now - r.cooldownDays * DAY_MS),
     dayCount: Object.values(db.invitations).filter((i) => i.hrId === uid && i.day === today).length,
     candidateOpen: Object.values(db.invitations).filter((i) => i.candidateId === candidateId && i.status === 'pending').length,
+    hrAgeMs: prof?.role === 'hr' ? ctx.now - (prof.hrSince ?? prof.createdAt) : undefined,
   });
   if (fault) return fail(fault);
   const inv: InvRow = {
@@ -536,7 +616,7 @@ export function respondOffer(
         emits.push(...notify(db, ctx, i.hrId, 'invite_closed', { invitationId: i.id, candidateName: c.displayName }));
       }
     }
-    emits.push(street({ type: 'placed', candidate: cardOf(db, c, ctx.now), company, at: iso(ctx.now) }));
+    emits.push(street({ type: 'placed', candidate: cardOf(db, c, ctx.now), company, name: tickerName(c), at: iso(ctx.now) }));
   }
   emits.push(...notify(db, ctx, o.hrId, 'offer_responded', { offerId: o.id, candidateName: c.displayName, accepted: accept }));
   return done(offerDto(o), emits);
@@ -599,8 +679,9 @@ const REPORT_REASONS: ReportReason[] = ['obscene', 'harassment', 'spam', 'person
 export function reportCandidate(db: DemoDb, ctx: Ctx, candidateId: string, reason: ReportReason, note?: string): Out<void> {
   const uid = ctx.uid;
   if (!uid) return fail({ error: 'UNAUTHENTICATED' });
+  if (isBanned(db, uid)) return fail({ error: 'BANNED' });
   const cand = db.candidates[candidateId];
-  const today = vnDay(ctx.now);
+  const reporter = db.users[uid];
   const early = checkReport({
     hasProfile: !!db.users[uid], candidateFound: !!cand, isSelf: !!cand && cand.userId === uid,
     reasonValid: REPORT_REASONS.includes(reason), reportsToday: 0, alreadyReported: false,
@@ -608,19 +689,79 @@ export function reportCandidate(db: DemoDb, ctx: Ctx, candidateId: string, reaso
   if (early) return fail(early);
   const late = checkReport({
     hasProfile: true, candidateFound: true, isSelf: false, reasonValid: true,
-    reportsToday: hit(db, `report:${uid}:${today}`, DAY_MS, LIMITS.reportsPerDay, ctx.now) ? 1 : LIMITS.reportsPerDay + 1,
+    reportsToday: hitDay(db, `report:${uid}`, LIMITS.reportsPerDay, ctx.now) ? 1 : LIMITS.reportsPerDay + 1,
     alreadyReported: db.reports.some((r) => r.reporterId === uid && r.candidateId === candidateId),
   });
   if (late) return fail(late);
-  db.reports.push({ reporterId: uid, candidateId, reason, note: (clean(note) ?? '').slice(0, 200) || null, at: ctx.now });
-  cand.reportCount += 1;
+  // sec M2: reports from profiles younger than reporterMinAgeMinutes are stored but not counted
+  const counted = reporter.createdAt <= ctx.now - LIMITS.reporterMinAgeMinutes * 60_000;
+  db.reports.push({ reporterId: uid, candidateId, reason, note: (clean(note) ?? '').slice(0, 200) || null, at: ctx.now, counted });
+  if (counted) cand.reportCount += 1;
   const emits: Emit[] = [];
   if (cand.reportCount >= LIMITS.reportsToHideSign && cand.signState === 'ok') {
     cand.signState = 'pending_review'; // AC-20.2
+    cand.updatedAt = ctx.now;
     emits.push(...notify(db, ctx, cand.userId, 'sign_hidden', {}));
-    emits.push(street({ type: 'candidate_upsert', candidate: lightCard(db, cand, ctx.now), at: iso(ctx.now) }));
+    emits.push(emitCard(db, cand, ctx.now)); // review M2: never re-broadcast a hidden candidate
   }
   return done(undefined, emits);
+}
+
+// ---------- admin (no UI in demo mode; mirrors public.admin_moderate / admin_ban_user for parity tests) ----------
+export type AdminAction = 'approve_sign' | 'remove_sign' | 'hide' | 'unhide' | 'delete' | 'ban' | 'unban';
+const ADMIN_ACTIONS: readonly string[] = ['approve_sign', 'remove_sign', 'hide', 'unhide', 'delete', 'ban', 'unban'];
+
+export function adminModerate(db: DemoDb, now: number, candidateId: string, action: string): Out<void> {
+  if (!ADMIN_ACTIONS.includes(action)) return fail({ error: 'VALIDATION', field: 'action' });
+  const c = db.candidates[candidateId];
+  if (!c) return fail({ error: 'NOT_FOUND' });
+  if ((action === 'ban' || action === 'unban') && !c.userId) return fail({ error: 'VALIDATION', field: 'action' });
+  switch (action as AdminAction) {
+    case 'approve_sign':
+      c.signState = 'ok';
+      c.reportCount = 0;
+      break;
+    case 'remove_sign':
+      c.signState = 'removed';
+      break;
+    case 'hide':
+      c.status = 'hidden';
+      c.modHiddenAt = now;
+      break;
+    case 'unhide':
+      c.modHiddenAt = null;
+      break;
+    case 'ban':
+      (db.bans ??= {})[c.userId!] ??= { reason: 'admin_moderate', at: now };
+      c.status = 'hidden';
+      c.modHiddenAt = now;
+      break;
+    case 'unban':
+      if (db.bans) delete db.bans[c.userId!];
+      return done(undefined);
+    case 'delete': {
+      if (c.userId) (db.tombstones ??= {})[c.userId] = { signLocked: true, hideLocked: true, at: now };
+      purgeCandidate(db, c);
+      return done(undefined, [street({ type: 'candidate_remove', id: c.id, at: iso(now) })]);
+    }
+  }
+  c.updatedAt = now;
+  return done(undefined, [emitCard(db, c, now)]);
+}
+
+export function adminBanUser(db: DemoDb, now: number, userId: string, banned = true, reason: string | null = null): Out<void> {
+  if (!userId) return fail({ error: 'VALIDATION', field: 'user' });
+  if (!banned) {
+    if (db.bans) delete db.bans[userId];
+    return done(undefined);
+  }
+  (db.bans ??= {})[userId] = { reason: clean(reason)?.slice(0, 200) ?? null, at: now };
+  const c = candOfUser(db, userId);
+  if (!c) return done(undefined);
+  c.status = 'hidden';
+  c.modHiddenAt = now;
+  c.updatedAt = now;
+  return done(undefined, [emitCard(db, c, now)]);
 }
 
 // ---------- notifications ----------

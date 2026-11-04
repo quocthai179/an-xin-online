@@ -15,14 +15,28 @@ begin
   return v;
 end $$;
 
+-- p_ip: client IP as the closest proxy reports it, i.e. the RIGHTMOST X-Forwarded-For entry. The leftmost entry is
+-- client-controlled, so it is always a spoofed constant here (0002 must ignore it). Default: one IP per user.
 create function tests.login(p_uid uuid, p_ip text default null) returns void language plpgsql as $$
 begin
   perform set_config('request.jwt.claims',
     jsonb_build_object('sub', p_uid, 'role', 'authenticated', 'is_anonymous', true, 'aud', 'authenticated')::text, true);
   perform set_config('request.headers',
-    case when p_ip is null then '{}' else jsonb_build_object('x-forwarded-for', p_ip || ', 10.0.0.1')::text end, true);
+    jsonb_build_object('x-forwarded-for', '203.0.113.66, ' || coalesce(p_ip, 'u-' || p_uid::text))::text, true);
   perform set_config('role', 'authenticated', true);
 end $$;
+
+-- raw request headers (e.g. '{}' = no client IP at all, or cf-connecting-ip / x-real-ip)
+create function tests.login_headers(p_uid uuid, p_headers jsonb) returns void language plpgsql as $$
+begin
+  perform tests.login(p_uid);
+  perform set_config('request.headers', p_headers::text, true);
+end $$;
+
+-- backdate a profile (account age gates: HR invite age, reporter age). Runs as the table owner.
+create function tests.age_profile(p_uid uuid, p_age interval) returns void language sql as $$
+  update public.profiles set created_at = created_at - p_age, hr_since = hr_since - p_age where id = p_uid
+$$;
 
 create function tests.login_anon() returns void language plpgsql as $$
 begin
@@ -80,13 +94,17 @@ end $$;
 -- security definer so it can be called while impersonating a client
 create function tests.reset_rate() returns void language sql security definer set search_path = '' as $$ delete from private.rate_hits $$;
 
-create function tests.mk_profile(p_name text, p_role public.user_role, p_company text default null) returns uuid
+-- p_age: profiles are backdated by default so that the 0002 account-age gates (TOO_NEW, uncounted fresh reporters)
+-- only apply where a test asks for a fresh profile (p_age => '0').
+create function tests.mk_profile(p_name text, p_role public.user_role, p_company text default null,
+                                 p_age interval default '2 hours') returns uuid
 language plpgsql as $$
 declare v uuid := tests.new_user();
 begin
   perform tests.login(v);
   perform tests.ok(public.upsert_profile(p_name, p_role, p_company, '{"skin":1}'::jsonb), 'mk_profile ' || p_name);
   perform tests.logout();
+  perform tests.age_profile(v, p_age);
   return v;
 end $$;
 
